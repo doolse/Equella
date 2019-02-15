@@ -329,7 +329,7 @@ public class BlackboardRESTConnectorServiceImpl extends AbstractIntegrationConne
 		final Content content = new Content();
 		content.setTitle(lmsLink.getName());
 		// Assumes BB displays HTML?  Otherwise we change true to false
-		content.setDescription(TextUtils.INSTANCE.ensureWrap(lmsLink.getDescription(),250, 250, true));
+		content.setDescription(TextUtils.INSTANCE.ensureWrap(lmsLink.getDescription(),225, 225, true));
 
 		final Content.ContentHandler contentHandler = new Content.ContentHandler();
 		contentHandler.setId(Content.ContentHandler.RESOURCE_LTI_LINK);
