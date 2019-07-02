@@ -20,7 +20,6 @@ package com.tle.web.cloudproviders
 
 import java.util.UUID
 
-import cats.data.OptionT
 import com.dytech.edge.wizard.beans.control.CustomControl
 import com.softwaremill.sttp.Uri
 import com.tle.common.usermanagement.user.CurrentUser
@@ -51,8 +50,10 @@ import com.tle.web.sections.{SectionInfo, SectionResult}
 import com.tle.web.wizard.controls.{AbstractWebControl, WebControl, WebControlModel}
 import com.tle.web.wizard.render.WizardFreemarkerFactory
 import com.tle.web.wizard.{BrokenWebControl, WizardStateInterface}
+import zio.ZIO
 
 import scala.collection.JavaConverters._
+import zio.interop.catz._
 
 object CloudWizardControl {
 
@@ -98,11 +99,13 @@ object CloudWizardControl {
         RunWithDB.execute {
           (for {
             provider   <- CloudProviderDB.get(providerId)
-            serviceUri <- OptionT.fromOption[DB](provider.serviceUrls.get(s"control_$controlId"))
-            uri <- OptionT(
-              CloudProviderService.serviceUri(provider, serviceUri, Map.empty).map(_.toOption))
-          } yield new CloudWizardControl(uri, controlDef, provider, controlId))
-            .getOrElse(new BrokenWebControl(controlDef))
+            serviceUri <- ZIO.succeed(provider.serviceUrls.get(s"control_$controlId")).some
+            uri <- CloudProviderService
+              .serviceUri(provider, serviceUri, Map.empty)
+              .map(_.toOption)
+              .some
+          } yield new CloudWizardControl(uri, controlDef, provider, controlId)).optional
+            .map(_.getOrElse(new BrokenWebControl(controlDef)))
         }
       case _ => null
     }

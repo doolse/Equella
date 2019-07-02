@@ -19,26 +19,32 @@
 package com.tle.core.db
 
 import java.sql.Connection
+import java.util.Locale
 
-import cats.effect.IO
+import com.tle.beans.Institution
 import com.tle.common.institution.CurrentInstitution
-import com.tle.core.hibernate.impl.HibernateServiceImpl
+import com.tle.common.usermanagement.user.UserState
 import com.tle.web.DebugSettings
-import io.doolse.simpledba.jdbc._
 import javax.sql.DataSource
 import org.slf4j.LoggerFactory
 import org.springframework.orm.hibernate3.SessionHolder
 import org.springframework.transaction.support.TransactionSynchronizationManager
+import zio._
 
 object RunWithDB {
 
   val logger = LoggerFactory.getLogger(getClass)
 
-  lazy val getSessionFactory =
-    HibernateServiceImpl.getInstance().getTransactionAwareSessionFactory("main", false)
+  case class DBContext(connection: TaskManaged[Connection],
+                       inst: Institution,
+                       user: UserState,
+                       locale: Locale,
+                       datasource: DataSource)
+      extends UserContext
+      with JDBCConnection
 
   def getSessionHolder() = {
-    TransactionSynchronizationManager.getResource(getSessionFactory).asInstanceOf[SessionHolder]
+    TransactionSynchronizationManager.getResource(defaultSessionFactory).asInstanceOf[SessionHolder]
   }
 
   def executeWithHibernate[A](jdbc: DB[A]): A = {
@@ -48,7 +54,8 @@ object RunWithDB {
     }
     val con = sessionHolder.getSession().connection()
     val uc  = UserContext.fromThreadLocals()
-    jdbc.run(uc).runA(con).unsafeRunSync()
+    dbRuntime.unsafeRun(
+      jdbc.provide(DBContext(Managed.succeed(con), uc.inst, uc.user, uc.locale, uc.datasource)))
   }
 
   def executeTransaction[A](ds: DataSource, jdbc: JDBCIO[A]): A = {
@@ -59,11 +66,15 @@ object RunWithDB {
       if (DebugSettings.isDebuggingMode) sys.error(msg)
       else logger.error(msg)
     }
-    val connection = ds.getConnection()
-    jdbc.runA(connection).attempt.unsafeRunSync() match {
-      case Left(e)  => connection.rollback(); connection.close(); throw e
-      case Right(v) => connection.commit(); connection.close(); v
-    }
+    dbRuntime.unsafeRun(
+      managedConnection(ds).use { con =>
+        jdbc
+          .tapBoth(_ => ZIO.effect(con.rollback()).ignore, _ => ZIO.effect(con.commit()).ignore)
+          .provide(new JDBCConnection {
+            override val connection = Managed.succeed(con)
+          })
+      }
+    )
   }
 
   def executeIfInInstitution[A](db: DB[Option[A]]): Option[A] = {
@@ -72,12 +83,14 @@ object RunWithDB {
 
   def execute[A](db: DB[A]): A = {
     val uc = UserContext.fromThreadLocals()
-    executeTransaction(uc.ds, db.run(uc).map(a => IO.pure(a))).unsafeRunSync()
+    executeTransaction(
+      uc.datasource,
+      db.provideSome[JDBCConnection](c =>
+        DBContext(c.connection, uc.inst, uc.user, uc.locale, uc.datasource))
+    )
   }
 
-  def executeWithPostCommit(db: DB[IO[Unit]]): Unit = {
-    val uc = UserContext.fromThreadLocals()
-    executeTransaction(uc.ds, db.run(uc)).unsafeRunSync()
-  }
+  def executeWithPostCommit(db: DB[Task[Unit]]): Unit =
+    dbRuntime.unsafeRun(execute(db))
 
 }

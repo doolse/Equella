@@ -22,25 +22,28 @@ import java.util
 
 import com.tle.core.db.migration.DBSchemaMigration
 import com.tle.core.db.tables._
-import com.tle.core.db.types.{DbUUID, InstId, JsonColumn, String255}
+import com.tle.core.db.types._
 import com.tle.core.hibernate.factory.guice.HibernateFactoryModule
 import fs2.Stream
-import io.circe.{Json, JsonObject}
+import io.circe.Json
 import io.doolse.simpledba._
 import io.doolse.simpledba.jdbc._
 import io.doolse.simpledba.syntax._
 import shapeless._
+import zio.RIO
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 trait DBSchema extends StdColumns {
 
-  implicit def config: JDBCConfig.Aux[C]
+  def mapper: JDBCMapper[C]
+  val queries: JDBCQueries[C, JDBCStream, JDBCIO] = mapper.queries(jdbcEffect)
+  def flush(s: Stream[JDBCIO, JDBCWriteOp])       = queries.flush(s)
 
   implicit def dbUuidCol: C[DbUUID]
 
-  def schemaSQL: JDBCSchemaSQL = config.schemaSQL
+  val schemaSQL: SQLDialect = queries.dialect
 
   val allTables: mutable.Buffer[TableDefinition]         = mutable.Buffer()
   val allIndexes: mutable.Buffer[(TableColumns, String)] = mutable.Buffer()
@@ -63,21 +66,24 @@ trait DBSchema extends StdColumns {
 
   def autoIdCol: C[Long]
 
-  val auditLog = TableMapper[AuditLogEntry].table("audit_log_entry").edit('id, autoIdCol).key('id)
+  val auditLog = mapper.mapped[AuditLogEntry].table("audit_log_entry").edit('id, autoIdCol).key('id)
 
-  def insertAuditLog: (Long => AuditLogEntry) => Stream[JDBCIO, AuditLogEntry]
+  def insertAuditLog: (Long => AuditLogEntry) => JDBCIO[AuditLogEntry]
 
   val userAndInst = Cols('user_id, 'institution_id)
 
-  val auditLogQueries = AuditLogQueries(
-    insertAuditLog,
-    auditLog.delete.where(userAndInst, BinOp.EQ).build,
-    auditLog.query.where(userAndInst, BinOp.EQ).build,
-    auditLog.delete.where('institution_id, BinOp.EQ).build,
-    auditLog.delete.where('timestamp, BinOp.LT).build,
-    auditLog.select.count.where('institution_id, BinOp.EQ).buildAs[InstId, Int],
-    auditLog.query.where('institution_id, BinOp.EQ).build
-  )
+  val auditLogQueries = {
+    val deleteLogs = queries.deleteFrom(auditLog)
+    AuditLogQueries(
+      insertAuditLog,
+      deleteLogs.where(userAndInst, BinOp.EQ).build[(UserId, InstId)],
+      queries.query(auditLog).where(userAndInst, BinOp.EQ).build[(UserId, InstId)],
+      deleteLogs.where('institution_id, BinOp.EQ).build,
+      deleteLogs.where('timestamp, BinOp.LT).build,
+      queries.selectFrom(auditLog).count.where('institution_id, BinOp.EQ).buildAs[InstId, Int],
+      queries.query(auditLog).where('institution_id, BinOp.EQ).build
+    )
+  }
 
   val auditLogTable = auditLog.definition
 
@@ -96,8 +102,9 @@ trait DBSchema extends StdColumns {
   val auditLogNewColumns = auditLog.subset(Cols('meta))
 
   val itemViewId    = Cols('inst, 'item_uuid, 'item_version)
-  val itemViewCount = TableMapper[ItemViewCount].table("viewcount_item").keys(itemViewId)
-  val attachmentViewCount = TableMapper[AttachmentViewCount]
+  val itemViewCount = mapper.mapped[ItemViewCount].table("viewcount_item").keys(itemViewId)
+  val attachmentViewCount = mapper
+    .mapped[AttachmentViewCount]
     .table("viewcount_attachment")
     .keys(itemViewId ++ Cols('attachment))
 
@@ -105,33 +112,36 @@ trait DBSchema extends StdColumns {
 
   allTables ++= viewCountTables
 
-  val countByCol = JDBCQueries.queryRawSQL(
+  val countByCol = queries.sqlRecord[Tuple1[Long], Tuple1[Option[Int]]](
     "select sum(\"count\") from viewcount_item vci " +
       "inner join item i on vci.item_uuid = i.uuid and vci.item_version = i.version " +
-      "inner join base_entity be on be.id = i.item_definition_id where be.id = ?",
-    config.record[Long :: HNil],
-    config.record[Option[Int] :: HNil]
+      "inner join base_entity be on be.id = i.item_definition_id where be.id = ?"
   )
 
-  val attachmentViewCountByCol = JDBCQueries.queryRawSQL(
+  val attachmentViewCountByCol = queries.sqlRecord[Tuple1[Long], Tuple1[Option[Int]]](
     "select sum(\"count\") from viewcount_attachment vca " +
       "inner join attachment a on vca.attachment = a.uuid " +
       "inner join item i on a.item_id = i.id " +
-      "inner join base_entity be on be.id = i.item_definition_id where be.id = ?",
-    config.record[Long :: HNil],
-    config.record[Option[Int] :: HNil]
+      "inner join base_entity be on be.id = i.item_definition_id where be.id = ?"
   )
 
   val viewCountQueries = {
-    val del1 = itemViewCount.delete.where(itemViewId, BinOp.EQ).build[(InstId, DbUUID, Int)]
-    val del2 = attachmentViewCount.delete.where(itemViewId, BinOp.EQ).build[(InstId, DbUUID, Int)]
+    val del1 =
+      queries.deleteFrom(itemViewCount).where(itemViewId, BinOp.EQ).build[(InstId, DbUUID, Int)]
+    val del2 = queries
+      .deleteFrom(attachmentViewCount)
+      .where(itemViewId, BinOp.EQ)
+      .build[(InstId, DbUUID, Int)]
     ViewCountQueries(
-      itemViewCount.writes,
-      attachmentViewCount.writes,
-      itemViewCount.byPK,
-      itemViewCount.query.where(Cols('inst), BinOp.EQ).build,
-      attachmentViewCount.byPK,
-      attachmentViewCount.query.where(Cols('inst, 'item_uuid, 'item_version), BinOp.EQ).build,
+      queries.writes(itemViewCount),
+      queries.writes(attachmentViewCount),
+      queries.byPK(itemViewCount).build,
+      queries.query(itemViewCount).where(Cols('inst), BinOp.EQ).build,
+      queries.byPK(attachmentViewCount).build,
+      queries
+        .query(attachmentViewCount)
+        .where(Cols('inst, 'item_uuid, 'item_version), BinOp.EQ)
+        .build,
       countByCol.as[Long => Stream[JDBCIO, Option[Int]]].andThen(_.map(_.getOrElse(0))),
       attachmentViewCountByCol
         .as[Long => Stream[JDBCIO, Option[Int]]]
@@ -141,21 +151,23 @@ trait DBSchema extends StdColumns {
   }
 
   val settingsRel =
-    TableMapper[Setting].table("configuration_property").keys(Cols('institution_id, 'property))
+    mapper.mapped[Setting].table("configuration_property").keys(Cols('institution_id, 'property))
 
   val settingsQueries = SettingsQueries(
-    settingsRel.writes,
-    settingsRel.byPK,
-    settingsRel.query
+    queries.writes(settingsRel),
+    queries.byPK(settingsRel).build,
+    queries
+      .query(settingsRel)
       .where(Cols('institution_id), BinOp.EQ)
       .where(Cols('property), BinOp.LIKE)
       .build,
-    settingsRel.query
+    queries
+      .query(settingsRel)
       .where(Cols('property), BinOp.LIKE)
       .build
   )
 
-  val entityTable = TableMapper[OEQEntity].table("entities").keys(Cols('inst_id, 'uuid))
+  val entityTable = mapper.mapped[OEQEntity].table("entities").keys(Cols('inst_id, 'uuid))
 
   val entityTypeIdx = (entityTable.subset(Cols('inst_id, 'typeid)), "entityTypeIdx")
 
@@ -163,23 +175,23 @@ trait DBSchema extends StdColumns {
   val newEntityIndexes = Seq(entityTypeIdx)
 
   val entityQueries = EntityQueries(
-    entityTable.writes,
-    entityTable.query.where(Cols('inst_id, 'typeid), BinOp.EQ).build,
-    entityTable.byPK,
-    entityTable.query.where(Cols('inst_id), BinOp.EQ).build
+    queries.writes(entityTable),
+    queries.query(entityTable).where(Cols('inst_id, 'typeid), BinOp.EQ).build,
+    queries.byPK(entityTable).build,
+    queries.query(entityTable).where(Cols('inst_id), BinOp.EQ).build
   )
 
   def cachedValueByValue: ((String255, String, InstId)) => Stream[JDBCIO, CachedValue] =
-    cachedValues.query.where(Cols('cache_id, 'value, 'institution_id), BinOp.EQ).build
+    queries.query(cachedValues).where(Cols('cache_id, 'value, 'institution_id), BinOp.EQ).build
 
-  val cachedValues = TableMapper[CachedValue].table("cached_value").edit('id, autoIdCol).key('id)
+  val cachedValues = mapper.mapped[CachedValue].table("cached_value").edit('id, autoIdCol).key('id)
 
-  def insertCachedValue: (Long => CachedValue) => Stream[JDBCIO, CachedValue]
+  def insertCachedValue: (Long => CachedValue) => JDBCIO[CachedValue]
 
   val cachedValueQueries = CachedValueQueries(
     insertCachedValue,
-    cachedValues.writes,
-    cachedValues.query.where(Cols('cache_id, 'key, 'institution_id), BinOp.EQ).build,
+    queries.writes(cachedValues),
+    queries.query(cachedValues).where(Cols('cache_id, 'key, 'institution_id), BinOp.EQ).build,
     cachedValueByValue
   )
 
@@ -194,7 +206,7 @@ trait DBSchema extends StdColumns {
 }
 
 object DBSchema {
-  lazy private val schemaForDBType: DBSchema with DBQueries with DBSchemaMigration = {
+  lazy private val schemaForDBType: DBQueries with DBSchemaMigration = {
     val p = new HibernateFactoryModule
     p.getProperty("hibernate.connection.driver_class") match {
       case "org.postgresql.Driver"                        => PostgresSchema
@@ -202,8 +214,6 @@ object DBSchema {
       case "oracle.jdbc.driver.OracleDriver"              => OracleSchema
     }
   }
-
-  def schema: DBSchema = schemaForDBType
 
   def schemaMigration: DBSchemaMigration = schemaForDBType
 

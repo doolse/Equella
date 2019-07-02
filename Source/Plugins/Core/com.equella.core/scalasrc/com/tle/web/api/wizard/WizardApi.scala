@@ -23,13 +23,11 @@ import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.util.UUID
 
-import cats.data.OptionT
-import cats.effect.IO
 import com.softwaremill.sttp._
 import com.tle.beans.item.{Item, ItemPack}
 import com.tle.common.filesystem.FileEntry
 import com.tle.core.cloudproviders.{CloudProviderDB, CloudProviderService}
-import com.tle.core.db.{DB, RunWithDB}
+import com.tle.core.db.{RunWithDB, dbRuntime}
 import com.tle.core.httpclient._
 import com.tle.core.item.operations.{ItemOperationParams, WorkflowOperation}
 import com.tle.core.item.standard.operations.DuringSaveOperation
@@ -46,6 +44,8 @@ import javax.ws.rs._
 import javax.ws.rs.core.Response.{ResponseBuilder, Status}
 import javax.ws.rs.core.{Context, Response, StreamingOutput, UriInfo}
 import org.jboss.resteasy.annotations.cache.NoCache
+import zio.interop.catz._
+import zio.{Task, ZIO}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits
@@ -138,13 +138,13 @@ class WizardApi {
   }
 
   def streamedResponse(
-      response: com.softwaremill.sttp.Response[Stream[IO, ByteBuffer]]): ResponseBuilder = {
+      response: com.softwaremill.sttp.Response[Stream[Task, ByteBuffer]]): ResponseBuilder = {
     response.body match {
       case Right(responseStream) =>
         val stream = new StreamingOutput {
           override def write(output: OutputStream): Unit = {
             val channel = Channels.newChannel(output)
-            responseStream.evalMap(bb => IO(channel.write(bb))).compile.drain.unsafeRunSync()
+            dbRuntime.unsafeRun(responseStream.evalMap(bb => Task(channel.write(bb))).compile.drain)
           }
         }
         Response
@@ -161,7 +161,7 @@ class WizardApi {
       request: HttpServletRequest,
       providerId: UUID,
       serviceId: String,
-      uriInfo: UriInfo)(f: Uri => Request[T, Stream[IO, ByteBuffer]]): Response = {
+      uriInfo: UriInfo)(f: Uri => Request[T, Stream[Task, ByteBuffer]]): Response = {
     withWizardState(wizid, request, false) { _ =>
       ()
     }
@@ -170,15 +170,15 @@ class WizardApi {
       .execute {
         (for {
           cp         <- CloudProviderDB.get(providerId)
-          serviceUri <- OptionT.fromOption[DB](cp.serviceUrls.get(serviceId))
-          response <- OptionT.liftF(
-            CloudProviderService.serviceRequest(
-              serviceUri,
-              cp,
-              queryParams,
-              uri => f(uri).response(asStream[Stream[IO, ByteBuffer]])))
-        } yield streamedResponse(response))
-          .getOrElse(Response.status(Status.NOT_FOUND))
+          serviceUri <- ZIO.succeed(cp.serviceUrls.get(serviceId)).some
+          response <- CloudProviderService
+            .serviceRequest(serviceUri,
+                            cp,
+                            queryParams,
+                            uri => f(uri).response(asStream[Stream[Task, ByteBuffer]]))
+            .mapError(Option.apply)
+        } yield
+          streamedResponse(response)).optional.map(_.getOrElse(Response.status(Status.NOT_FOUND)))
       }
       .build()
 
@@ -204,7 +204,7 @@ class WizardApi {
                 @Context req: HttpServletRequest,
                 content: InputStream): Response = {
     val streamedBody =
-      readInputStream(IO(content), 4096, Implicits.global).chunks.map(_.toByteBuffer)
+      readInputStream(Task(content), 4096, Implicits.global).chunks.map(_.toByteBuffer)
     proxyRequest(wizid, req, providerId, serviceId, uriInfo) { uri =>
       sttp
         .post(uri)
@@ -240,11 +240,12 @@ case class NotifyProvider(providerId: UUID) extends DuringSaveOperation with Ser
     override def execute(): Boolean = RunWithDB.executeWithHibernate {
       (for {
         cp         <- CloudProviderDB.get(providerId)
-        serviceUri <- OptionT.fromOption[DB](cp.serviceUrls.get("itemNotification"))
+        serviceUri <- ZIO.succeed(cp.serviceUrls.get("itemNotification")).some
         notifyParams = Map("uuid" -> getItem.getUuid, "version" -> getItem.getVersion.toString)
-        _ <- OptionT.liftF(
-          CloudProviderService.serviceRequest(serviceUri, cp, notifyParams, sttp.post))
-      } yield false).getOrElse(false)
+        _ <- CloudProviderService
+          .serviceRequest(serviceUri, cp, notifyParams, sttp.post)
+          .mapError(Some(_))
+      } yield false).optional.map(_.getOrElse(false))
     }
   }
 }

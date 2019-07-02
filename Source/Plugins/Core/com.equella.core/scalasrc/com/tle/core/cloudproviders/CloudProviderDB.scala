@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
 import java.util.{Locale, UUID}
 
 import cats.data.Validated.{Invalid, Valid}
-import cats.data.{OptionT, ValidatedNec}
+import cats.data.ValidatedNec
 import cats.effect.{IO, LiftIO}
 import cats.syntax.applicative._
 import cats.syntax.apply._
@@ -40,6 +40,8 @@ import io.circe.generic.semiauto._
 import io.doolse.simpledba.Iso
 import io.doolse.simpledba.circe.circeJsonUnsafe
 import org.slf4j.LoggerFactory
+import zio.ZIO
+import zio.interop.catz._
 
 case class CloudProviderData(baseUrl: String,
                              iconUrl: Option[String],
@@ -130,14 +132,14 @@ object CloudProviderDB {
   }
 
   def validToken(regToken: String): DB[CloudProviderVal[Unit]] = {
-    LiftIO[DB].liftIO(IO {
+    ZIO.effect {
       if (!tokenCache.get(regToken).isPresent)
         EntityValidation("token", "invalid").invalidNec
       else {
         tokenCache.invalidate(regToken)
         ().validNec
       }
-    })
+    }
   }
 
   def register(
@@ -158,9 +160,9 @@ object CloudProviderDB {
     }
 
   def editRegistered(id: UUID, registration: CloudProviderRegistration)
-    : OptionT[DB, CloudProviderVal[CloudProviderInstance]] =
-    EntityDB.readOne(id).semiflatMap { oeq =>
-      doEdit(oeq, registration)
+    : OptionT[DBR, CloudProviderVal[CloudProviderInstance]] =
+    EntityDB.readOne(id).flatMap { oeq =>
+      doEdit(oeq, registration).mapError(Some(_))
     }
 
   private def doEdit(
@@ -172,32 +174,31 @@ object CloudProviderDB {
       _ <- validated.traverse(cdb => flushDB(EntityDB.update[CloudProviderDB](oeq.entity, cdb)))
     } yield validated.map(toInstance)
 
-  def refreshRegistration(id: UUID): OptionT[DB, CloudProviderVal[CloudProviderInstance]] =
+  def refreshRegistration(id: UUID): OptionT[DBR, CloudProviderVal[CloudProviderInstance]] =
     for {
       oeqProvider <- EntityDB.readOne(id)
       provider = toInstance(oeqProvider)
-      refreshService <- OptionT.fromOption[DB](provider.serviceUrls.get(RefreshServiceId))
-      validated <- OptionT {
-        CloudProviderService
-          .serviceRequest(refreshService,
-                          provider,
-                          Map.empty,
-                          uri =>
-                            sttp
-                              .post(uri)
-                              .body(CloudProviderRefreshRequest(id))
-                              .response(asJson[CloudProviderRegistration]))
-          .flatMap { response =>
-            response.body match {
-              case Right(Right(registration)) => doEdit(oeqProvider, registration).map(Option(_))
-              case err =>
-                dbLiftIO.liftIO(IO {
-                  Logger.warn(s"Failed to refresh provider - $err")
-                  Option.empty[CloudProviderVal[CloudProviderInstance]]
-                })
-            }
+      refreshService <- ZIO.succeed(provider.serviceUrls.get(RefreshServiceId)).some
+      validated <- CloudProviderService
+        .serviceRequest(refreshService,
+                        provider,
+                        Map.empty,
+                        uri =>
+                          sttp
+                            .post(uri)
+                            .body(CloudProviderRefreshRequest(id))
+                            .response(asJson[CloudProviderRegistration]))
+        .flatMap { response =>
+          response.body match {
+            case Right(Right(registration)) => doEdit(oeqProvider, registration).map(Option(_))
+            case err =>
+              ZIO.effect {
+                Logger.warn(s"Failed to refresh provider - $err")
+                Option.empty[CloudProviderVal[CloudProviderInstance]]
+              }
           }
-      }
+        }
+        .some
     } yield validated
 
   val createRegistrationToken: DB[String] = {
@@ -226,14 +227,14 @@ object CloudProviderDB {
     }
   }
 
-  def deleteRegistration(id: UUID): DB[Unit] =
+  def deleteRegistration(id: UUID): InstDB[Unit] =
     EntityDB.delete(id).compile.drain
 
-  def get(id: UUID): OptionT[DB, CloudProviderInstance] = {
+  def get(id: UUID): OptionT[InstDBR, CloudProviderInstance] = {
     EntityDB.readOne(id).map(toInstance)
   }
 
-  def getStream(id: UUID): Stream[DB, CloudProviderInstance] = {
+  def getStream(id: UUID): Stream[InstDB, CloudProviderInstance] = {
     EntityDB.readOneStream(id).map(toInstance)
   }
 }

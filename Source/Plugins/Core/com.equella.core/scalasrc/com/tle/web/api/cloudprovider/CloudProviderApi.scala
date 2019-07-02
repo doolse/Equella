@@ -33,6 +33,7 @@ import io.swagger.annotations.{Api, ApiOperation}
 import javax.ws.rs._
 import javax.ws.rs.core._
 import org.jboss.resteasy.annotations.cache.NoCache
+import zio.interop.catz._
 
 case class CloudProviderForward(url: String)
 @NoCache
@@ -117,7 +118,8 @@ class CloudProviderApi {
             Response.noContent()
           })
         }
-        .getOrElse(Response.status(404))
+        .optional
+        .map(_.getOrElse(Response.status(404)))
     }
   }
 
@@ -134,7 +136,7 @@ class CloudProviderApi {
   @ApiOperation(value = "Refresh a cloud provider")
   def refreshRegistration(@PathParam("uuid") uuid: UUID): Response = ApiHelper.runAndBuild {
     checkPermissions()
-    CloudProviderDB.refreshRegistration(uuid).value.as(Response.noContent())
+    CloudProviderDB.refreshRegistration(uuid).optional.as(Response.noContent())
   }
 
   @GET

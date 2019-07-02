@@ -29,6 +29,7 @@ import com.tle.core.events.ApplicationEvent.PostTo
 import com.tle.core.events.listeners.ApplicationListener
 import com.tle.legacy.LegacyGuice
 import cats.syntax.applicative._
+import zio.{Task, ZIO}
 
 import scala.collection.mutable
 
@@ -56,11 +57,11 @@ trait CacheInvalidation extends ApplicationListener {
 }
 
 trait Cache[K, V] {
-  def invalidate: K => DB[IO[Unit]]
+  def invalidate: K => DB[Unit]
   def get: K => DB[V]
   def getIfValid(k: K, valid: V => Boolean): DB[V] = get(k).flatMap { value =>
-    if (valid(value)) value.pure[DB]
-    else invalidate(k).flatMap(dbLiftIO.liftIO).flatMap(_ => get(k))
+    if (valid(value)) ZIO.succeed(value)
+    else invalidate(k).flatMap(_ => get(k))
   }
 }
 
@@ -73,38 +74,27 @@ object DBCacheBuilder extends CacheInvalidation {
                          new ConcurrentHashMap[String, AnyRef]()): Cache[K, V] = {
     globalCaches.put(cacheable.cacheId, backingMap)
     new Cache[K, V] {
-      def invalidate: K => DB[IO[Unit]] =
+      def invalidate: K => DB[Unit] =
         (k: K) =>
-          Kleisli { uc: UserContext =>
-            StateT.liftF {
-              IO.pure {
-                IO {
-                  val key = cacheable.key(uc, k)
-                  backingMap.remove(key)
-                  LegacyGuice.eventService.publishApplicationEvent(
-                    CacheInvalidationEvent(cacheable.cacheId, key))
-                }
-              }
+          getContext.flatMap { uc =>
+            Task {
+              val key = cacheable.key(uc, k)
+              backingMap.remove(key)
+              LegacyGuice.eventService.publishApplicationEvent(
+                CacheInvalidationEvent(cacheable.cacheId, key))
             }
         }
 
       def get: K => DB[V] =
         (k: K) =>
-          Kleisli { uc: UserContext =>
-            StateT.inspectF { s: Connection =>
-              val key = cacheable.key(uc, k)
-              backingMap
-                .computeIfAbsent(
-                  key,
-                  _ =>
-                    Async
-                      .memoize(
-                        RunWithDB.executeTransaction(uc.ds,
-                                                     cacheable.query(k).run(uc).map(IO.pure)))
-                      .unsafeRunSync())
-                .asInstanceOf[IO[V]]
+          getDBContext.flatMap { uc =>
+            val key = cacheable.key(uc, k)
+            def compute(s: String): DB[V] = {
+              RunWithDB.executeTransaction(uc.datasource, cacheable.query(k).provide(uc).memoize)
             }
+            backingMap.computeIfAbsent(key, compute).asInstanceOf[DB[V]]
         }
+
     }
   }
 

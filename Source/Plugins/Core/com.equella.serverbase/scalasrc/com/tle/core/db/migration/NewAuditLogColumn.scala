@@ -20,7 +20,7 @@ package com.tle.core.db.migration
 
 import com.tle.core.i18n.ServerStrings
 import com.tle.core.migration.MigrationResult
-import io.doolse.simpledba.jdbc.JDBCIO
+import com.tle.core.db._
 
 object NewAuditLogColumn
     extends SimpleMigration("NewAuditLogColumn",

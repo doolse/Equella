@@ -38,6 +38,7 @@ import io.circe.Json
 import io.doolse.simpledba.jdbc._
 import cats.syntax.apply._
 import com.tle.core.i18n.CoreStrings
+import zio.interop.catz._
 
 object OEQEntityConverter {
   def TaskId         = "oeqentity"
@@ -137,11 +138,9 @@ class OEQEntityConverter extends Converter {
   }
 
   def exportDB(staging: TemporaryFileHandle, institution: Institution): DB[Unit] =
-    Kleisli.liftF {
-      jsonPipe(staging) {
-        EntityDB.queries.allByInst(institution).map(toEntityJson)
-      }.compile.drain
-    }
+    jsonPipe(staging) {
+      EntityDB.queries.allByInst(institution).map(toEntityJson)
+    }.compile.drain
 
   def importDB(staging: TemporaryFileHandle, newInstitution: Institution): DB[Unit] = {
     flushDB {

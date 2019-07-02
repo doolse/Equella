@@ -33,17 +33,17 @@ object PostgresSchema
     with DBQueries
     with StdPostgresColumns {
 
-  implicit def config = setupLogging(postgresConfig)
-
   override def jsonColumnMod(ct: ColumnType): ColumnType = ct.copy(typeName = "JSONB")
 
-  lazy val hibSeq = Sequence[Long]("hibernate_sequence")
+  lazy val mapper          = postgresMapper
+  lazy val hibSeq          = Sequence[Long]("hibernate_sequence")
+  lazy val postgresQueries = new PostgresQueries(mapper.dialect, queries.effect)
 
   def autoIdCol = longCol
 
-  override def insertAuditLog = insertWith(auditLog, hibSeq)
+  override def insertAuditLog = postgresQueries.insertWith(auditLog, hibSeq)
 
-  override def insertCachedValue = insertWith(cachedValues, hibSeq)
+  override def insertCachedValue = postgresQueries.insertWith(cachedValues, hibSeq)
 
   def dbUuidCol =
     wrap[String, DbUUID](stringCol,

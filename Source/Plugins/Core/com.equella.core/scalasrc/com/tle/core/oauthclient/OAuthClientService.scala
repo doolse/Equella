@@ -37,6 +37,8 @@ import io.circe.generic.semiauto._
 import io.circe.{Decoder, Encoder}
 import io.doolse.simpledba.circe._
 import com.tle.core.httpclient._
+import zio.{Task, ZIO}
+import zio.interop.catz._
 
 object OAuthTokenType extends Enumeration {
   val Bearer, EquellaApi = Value
@@ -95,7 +97,8 @@ object OAuthClientService {
 
   object OAuthTokenCache extends Cacheable[TokenRequest, OAuthTokenState] {
 
-    private val cacheQueries: CachedValueQueries = DBSchema.queries.cachedValueQueries
+    private val queries                          = DBSchema.queries
+    private val cacheQueries: CachedValueQueries = queries.cachedValueQueries
 
     def getDBCacheForRequest(token: TokenRequest): Stream[DB, CachedValue] = dbStream { ctx =>
       cacheQueries.getForKey(cacheId, token.key, ctx.inst)
@@ -116,20 +119,22 @@ object OAuthClientService {
         .post(uri"${token.authTokenUrl}")
 
       def newCacheValue(state: OAuthTokenState): DB[Unit] =
-        dbStream { uc =>
-          cacheQueries.insertNew { id =>
-            CachedValue(id,
-                        cache_id = cacheId,
-                        key = token.key,
-                        ttl = state.expires,
-                        value = stateJson.to(state),
-                        institution_id = uc.inst)
-          }
-        }.compile.drain
+        getContext.flatMap { uc =>
+          cacheQueries
+            .insertNew { id =>
+              CachedValue(id,
+                          cache_id = cacheId,
+                          key = token.key,
+                          ttl = state.expires,
+                          value = stateJson.to(state),
+                          institution_id = uc.inst)
+            }
+            .map(_ => ())
+        }
 
       for {
-        tokenState <- dbLiftIO
-          .liftIO(postRequest.send())
+        tokenState <- postRequest
+          .send()
           .map(_.unsafeBody.fold(de => throw de.error, responseToState))
         _ <- newCacheValue(tokenState)
       } yield tokenState
@@ -145,7 +150,7 @@ object OAuthClientService {
       for {
         dbCachedValue <- getDBCacheForRequest(token).compile.last
         state <- dbCachedValue match {
-          case Some(cv) => stateJson.from(cv.value).pure[DB]
+          case Some(cv) => ZIO.effect(stateJson.from(cv.value))
           case None     => requestTokenAndSave(token)
         }
       } yield state
@@ -166,7 +171,7 @@ object OAuthClientService {
 
   def removeToken(tokenRequest: TokenRequest): DB[Unit] = {
     OAuthTokenCache.removeFromDB(tokenRequest) *>
-      clientTokenCache.invalidate(tokenRequest).flatMap(dbLiftIO.liftIO)
+      clientTokenCache.invalidate(tokenRequest)
   }
 
   def tokenForClient(tokenRequest: TokenRequest): DB[OAuthTokenState] = {
@@ -180,26 +185,26 @@ object OAuthClientService {
     } yield refreshedToken
   }
 
-  def requestWithToken[T](request: Request[T, Stream[IO, ByteBuffer]],
+  def requestWithToken[T](request: Request[T, Stream[Task, ByteBuffer]],
                           token: String,
-                          tokenType: OAuthTokenType.Value): IO[Response[T]] = {
+                          tokenType: OAuthTokenType.Value): Task[Response[T]] = {
     val authHeader = tokenType match {
       case OAuthTokenType.EquellaApi =>
         OAuthWebConstants.HEADER_X_AUTHORIZATION -> s"${OAuthWebConstants.AUTHORIZATION_ACCESS_TOKEN}=$token"
       case OAuthTokenType.Bearer =>
         OAuthWebConstants.HEADER_AUTHORIZATION -> s"${OAuthWebConstants.AUTHORIZATION_BEARER} $token"
     }
-    request.headers(authHeader).send[IO]()
+    request.headers(authHeader).send[Task]()
   }
 
   def authorizedRequest[T](authTokenUrl: String,
                            clientId: String,
                            clientSecret: String,
-                           request: Request[T, Stream[IO, ByteBuffer]]): DB[Response[T]] = {
+                           request: Request[T, Stream[Task, ByteBuffer]]): DB[Response[T]] = {
     val tokenRequest = TokenRequest(authTokenUrl, clientId, clientSecret)
     for {
       token    <- tokenForClient(tokenRequest)
-      response <- dbLiftIO.liftIO(requestWithToken(request, token.token, token.tokenType))
+      response <- requestWithToken(request, token.token, token.tokenType)
       _        <- if (response.code == StatusCodes.Unauthorized) removeToken(tokenRequest) else ().pure[DB]
     } yield response
   }

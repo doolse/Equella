@@ -172,7 +172,7 @@ public class InitialSchema extends AbstractCreateMigration {
   @SuppressWarnings("nls")
   @Override
   protected void addExtraStatements(HibernateMigrationHelper helper, List<String> sql) {
-    sql.addAll(DBSchema$.MODULE$.schema().creationSQL());
+    sql.addAll(DBSchema$.MODULE$.schemaMigration().creationSQL());
     sql.addAll(helper.getAddIndexesRaw("bookmark_keywords", "bookkeywords", "bookmark_id"));
 
     sql.addAll(

@@ -37,6 +37,8 @@ import com.tle.core.httpclient._
 import com.tle.core.oauthclient.OAuthClientService
 import fs2.Stream
 import org.slf4j.LoggerFactory
+import zio.{Task, ZIO}
+import zio.interop.catz._
 
 import scala.collection.JavaConverters._
 
@@ -56,14 +58,14 @@ object CloudProviderService {
   final val ControlsServiceId   = "controls"
   final val CloudAttachmentType = "cloud"
 
-  def tokenUrlForProvider(provider: CloudProviderInstance): IO[Uri] = {
+  def tokenUrlForProvider(provider: CloudProviderInstance): Task[Uri] = {
     provider.serviceUrls
       .get(OAuthServiceId)
       .map { oauthService =>
-        IO.fromEither(
+        Task.fromEither(
           UriTemplateService.replaceVariables(oauthService.url, provider.baseUrl, Map()))
       }
-      .getOrElse(IO.raiseError(new Throwable("No OAuth service URL")))
+      .getOrElse(Task.fail(new Throwable("No OAuth service URL")))
   }
 
   def serviceUri(provider: CloudProviderInstance,
@@ -80,21 +82,19 @@ object CloudProviderService {
   def serviceRequest[T](serviceUri: ServiceUrl,
                         provider: CloudProviderInstance,
                         params: Map[String, Any],
-                        f: Uri => Request[T, Stream[IO, ByteBuffer]]): DB[Response[T]] =
+                        f: Uri => Request[T, Stream[Task, ByteBuffer]]): DB[Response[T]] =
     for {
       cparams <- contextParams
-      uri <- dbLiftIO.liftIO {
-        IO.fromEither(
-          UriTemplateService.replaceVariables(serviceUri.url, provider.baseUrl, cparams ++ params))
-      }
+      uri <- ZIO.fromEither(
+        UriTemplateService.replaceVariables(serviceUri.url, provider.baseUrl, cparams ++ params))
       req  = f(uri)
       auth = provider.providerAuth
       response <- if (serviceUri.authenticated) {
-        dbLiftIO.liftIO(tokenUrlForProvider(provider)).flatMap { oauthUrl =>
+        tokenUrlForProvider(provider).flatMap { oauthUrl =>
           OAuthClientService
             .authorizedRequest(oauthUrl.toString, auth.clientId, auth.clientSecret, req)
         }
-      } else dbLiftIO.liftIO(req.send())
+      } else req.send()
     } yield response
 
   case class ControlListCacheValue(
@@ -115,7 +115,7 @@ object CloudProviderService {
     }
     override def query: CloudProviderInstance => DB[ControlListCacheValue] = provider => {
       provider.serviceUrls.get(ControlsServiceId) match {
-        case None => withTimeout(Right(Iterable.empty)).pure[DB]
+        case None => ZIO.succeed(withTimeout(Right(Iterable.empty)))
         case Some(controlsService) =>
           dbAttempt {
             serviceRequest(

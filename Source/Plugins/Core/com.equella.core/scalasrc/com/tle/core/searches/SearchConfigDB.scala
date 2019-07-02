@@ -20,7 +20,7 @@ package com.tle.core.searches
 
 import java.util.{Date, Locale, UUID}
 
-import cats.data.{OptionT, ValidatedNec}
+import cats.data.ValidatedNec
 import cats.syntax.functor._
 import cats.syntax.validated._
 import com.tle.core.db._
@@ -32,6 +32,7 @@ import fs2.Stream
 import io.circe.generic.semiauto._
 import io.doolse.simpledba.Iso
 import io.doolse.simpledba.circe._
+import zio.interop.catz._
 
 case class SearchConfigDB(entity: OEQEntity, data: SearchConfigData)
 
@@ -90,7 +91,7 @@ object SearchConfigDB {
       locale <- getContext.map(_.locale)
       oeq    <- EntityDB.newEntity(id)
       valid <- editFields(SearchConfigDB(oeq, SearchConfigData.empty), newConfig, locale)
-        .traverse(flushDB.compose(EntityDB.create[SearchConfigDB]))
+        .traverse(cdb => flushDB(EntityDB.create[SearchConfigDB](cdb)))
     } yield valid
 
   def deleteConfig(id: UUID): DB[Unit] =
@@ -101,23 +102,26 @@ object SearchConfigDB {
     getContext.map(_.locale).flatMap { locale =>
       EntityDB
         .readOne[SearchConfigDB](id)
-        .semiflatMap { orig =>
-          editFields(orig, edits, locale).traverse { edited =>
-            flushDB(EntityDB.update[SearchConfigDB](orig.entity, edited)).as(true)
-          }
+        .flatMap { orig =>
+          editFields(orig, edits, locale)
+            .traverse { edited =>
+              flushDB(EntityDB.update[SearchConfigDB](orig.entity, edited)).as(true)
+            }
+            .mapError(Option.apply)
         }
-        .getOrElse(false.valid)
+        .optional
+        .map(_.getOrElse(false.valid))
     }
 
   def readAllConfigs: Stream[DB, SearchConfig] = Stream.eval(getContext).flatMap { uc =>
     EntityDB.readAll[SearchConfigDB].map(toSearchConfig(uc.locale))
   }
 
-  def readConfig(id: UUID): OptionT[DB, SearchConfig] = OptionT.liftF(getContext).flatMap { uc =>
+  def readConfig(id: UUID): OptionT[DBR, SearchConfig] = getContext.flatMap { uc =>
     EntityDB.readOne[SearchConfigDB](id).map(toSearchConfig(uc.locale))
   }
 
-  def readPageConfig(page: String): OptionT[DB, SearchPageConfig] =
+  def readPageConfig(page: String): OptionT[DBR, SearchPageConfig] =
     SettingsDB.jsonProperty(pageConfigName(page))
 
   def writePageConfig(page: String, config: SearchPageConfig): DB[Unit] =

@@ -20,7 +20,7 @@ val axis2Version     = "1.6.2"
 val TomcatVersion    = "8.5.41"
 val SwaggerVersion   = "1.5.22"
 val RestEasyVersion  = "3.5.0.Final"
-val simpledbaVersion = "0.1.9"
+val simpledbaVersion = "0.1.11-SNAPSHOT"
 val circeVersion     = "0.11.1"
 val jsoupVersion     = "1.11.3"
 val sttpVersion      = "1.5.11"
@@ -41,6 +41,8 @@ libraryDependencies ++= Seq(
   "com.softwaremill.sttp"          %% "circe"                         % sttpVersion,
   "io.github.doolse"               %% "simpledba-jdbc"                % simpledbaVersion,
   "io.github.doolse"               %% "simpledba-circe"               % simpledbaVersion,
+  "io.github.doolse"               %% "simpledba-fs2"                 % simpledbaVersion,
+  "io.github.doolse"               %% "simpledba-zio"                 % simpledbaVersion,
   "axis"                           % "axis"                           % "1.4",
   "cglib"                          % "cglib"                          % "2.2.2",
   "com.fasterxml.jackson.core"     % "jackson-core"                   % jacksonVersion,
