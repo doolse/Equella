@@ -78,25 +78,28 @@ object AclChecks {
               s.revokedPerObj.updated(target, s.revokedPerObj.getOrElse(target, Set.empty) + priv))
         }
 
-        jdbcEffect
-          .executeResultSet(
-            createSQL(privileges, exps),
-            (con, ps) => {
-              ps.setLong(1, uc.inst.getDatabaseId)
-              privileges.zipWithIndex.foreach { case (p, i) => ps.setString(2 + i, p) }
-              exps.zipWithIndex.foreach { case (e, i)       => ps.setLong(2 + privileges.size + i, e) }
-              Seq.empty
+        if (exps.isEmpty) {
+          Set.empty[String].pure[JDBCIO]
+        } else
+          jdbcEffect
+            .executeResultSet(
+              createSQL(privileges, exps),
+              (con, ps) => {
+                ps.setLong(1, uc.inst.getDatabaseId)
+                privileges.zipWithIndex.foreach { case (p, i) => ps.setString(2 + i, p) }
+                exps.zipWithIndex.foreach { case (e, i)       => ps.setLong(2 + privileges.size + i, e) }
+                Seq.empty
+              }
+            )
+            .map { rs =>
+              PrivEntry(rs.getString(1), rs.getString(2), rs.getString(3))
             }
-          )
-          .map { rs =>
-            PrivEntry(rs.getString(1), rs.getString(2), rs.getString(3))
-          }
-          .fold(PrivState())(processPriv)
-          .compile
-          .last
-          .map {
-            _.map(_.granted).getOrElse(Set.empty)
-          }
+            .fold(PrivState())(processPriv)
+            .compile
+            .last
+            .map {
+              _.map(_.granted).getOrElse(Set.empty)
+            }
       }
     }
 
