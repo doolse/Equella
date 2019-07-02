@@ -27,23 +27,24 @@ import com.tle.legacy.LegacyGuice.fileSystemService
 import fs2.{Pipe, Stream}
 import io.circe.parser.parse
 import io.circe.{Decoder, Encoder}
+
 import scala.collection.JavaConverters._
 import cats.syntax.functor._
+import zio.{Task, TaskR}
+
 import scala.io.Source
 
 object ExportUtils {
 
-  def asJsonFiles[A, F[_]](
+  def asJsonFiles[A, R](
       encoder: Encoder[A],
       path: A => String,
       baseDir: TemporaryFileHandle
-  )(implicit L: LiftIO[F]): Pipe[F, A, Unit] = _.evalMap { a =>
+  ): Pipe[TaskR[R, ?], A, Unit] = _.evalMap { a =>
     val filepath = path(a)
-    L.liftIO(
-      IO {
-        fileSystemService.write(baseDir, filepath, new StringReader(encoder(a).spaces2), false)
-      }.as()
-    )
+    Task.effect {
+      fileSystemService.write(baseDir, filepath, new StringReader(encoder(a).spaces2), false)
+    }.unit
   }
 
   def fileContentsStream[F[_]](baseDir: TemporaryFileHandle, parentPath: String, fe: FileEntry)(

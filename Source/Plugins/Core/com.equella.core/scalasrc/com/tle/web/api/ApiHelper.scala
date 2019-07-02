@@ -18,11 +18,12 @@
 
 package com.tle.web.api
 
-import cats.data.{NonEmptyChain, OptionT, Validated}
-import com.tle.core.db.{DB, RunWithDB}
+import cats.data.{NonEmptyChain, Validated}
+import com.tle.core.db._
 import fs2.Stream
 import javax.ws.rs.core.{Response, UriBuilder}
 import javax.ws.rs.core.Response.{ResponseBuilder, Status}
+import zio.interop.catz._
 
 object ApiHelper {
   def runAndBuild(db: DB[ResponseBuilder]): Response =
@@ -31,8 +32,8 @@ object ApiHelper {
   def entityOrNotFound[A](o: Option[A]): ResponseBuilder =
     o.fold(Response.status(Status.NOT_FOUND))(Response.ok(_))
 
-  def entityOrNotFoundDB[A](db: OptionT[DB, A]): DB[ResponseBuilder] =
-    db.value.map(entityOrNotFound)
+  def entityOrNotFoundDB[A](db: OptionT[DBR, A]): DB[ResponseBuilder] =
+    db.optional.map(entityOrNotFound)
 
   def allEntities[A](stream: Stream[DB, A]): DB[EntityPaging[A]] =
     stream.compile.toVector.map(EntityPaging.allResults)

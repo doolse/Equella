@@ -18,46 +18,94 @@
 
 package com.tle.core
 
-import cats.data.{Kleisli, StateT}
-import cats.effect.LiftIO
-import cats.syntax.applicative._
+import java.sql.Connection
+
 import cats.~>
+import com.tle.beans.Institution
+import com.tle.common.institution.CurrentInstitution
+import com.tle.core.hibernate.{CurrentDataSource, DataSourceHolder}
+import com.tle.core.hibernate.impl.HibernateServiceImpl
 import fs2.Stream
-import io.doolse.simpledba.WriteOp
+import io.doolse.simpledba.WriteQueries
+import io.doolse.simpledba.fs2._
+import io.doolse.simpledba.interop.zio._
 import io.doolse.simpledba.jdbc._
-import io.doolse.simpledba.syntax._
+import javax.sql.DataSource
+import org.hibernate.{SessionFactory, Transaction}
+import org.hibernate.classic.Session
+import org.slf4j.LoggerFactory
+import org.springframework.orm.hibernate3.SessionHolder
+import org.springframework.transaction.support.TransactionSynchronizationManager
+import zio.Exit.{Failure, Success}
+import zio.interop.catz._
+import zio._
+
+import scala.util.Try
 
 package object db {
-  type DB[A] = Kleisli[JDBCIO, UserContext, A]
 
-  val getContext: DB[UserContext] = Kleisli.ask
+  val logSQL = LoggerFactory.getLogger("org.hibernate.SQL")
 
-  val dbLiftIO = LiftIO[DB]
+  lazy val defaultSessionFactory =
+    HibernateServiceImpl.getInstance().getTransactionAwareSessionFactory("main", false)
 
-  def dbAttempt[A](db: DB[A]): DB[Either[Throwable, A]] = Kleisli { uc =>
-    StateT { con =>
-      db.run(uc).runA(con).attempt.map(e => (con, e))
+  val dbRuntime = new DefaultRuntime {}
+
+  trait JDBCConnection {
+    val connection: TaskManaged[Connection]
+  }
+
+  type OptionT[R, A] = ZIO[R, Option[Throwable], A]
+  type InstDBR       = Institutional with JDBCConnection
+  type DBR           = UserContext with JDBCConnection
+  type InstDB[A]     = RIO[InstDBR, A]
+  type DB[A]         = RIO[DBR, A]
+  type JDBCIO[A]     = RIO[JDBCConnection, A]
+  type JDBCStream[A] = Stream[JDBCIO, A]
+
+  type Writes[T] = WriteQueries[JDBCStream, JDBCIO, JDBCWriteOp, T]
+
+  def managedConnection(ds: DataSource): Managed[Throwable, Connection] =
+    Managed.fromAutoCloseable(ZIO.effect(ds.getConnection()))
+
+  object JDBCIOConnection extends WithJDBCConnection[JDBCStream] {
+    override def apply[A](f: Connection => Stream[JDBCIO, A]): Stream[JDBCIO, A] =
+      for {
+        managedConnection <- Stream.eval(
+          ZIO.access[JDBCConnection](_.connection).flatMap(_.reserve))
+        connection <- Stream.bracket(managedConnection.acquire)(c =>
+          managedConnection.release(Exit.succeed(c)).unit)
+        res <- f(connection)
+      } yield res
+  }
+
+  val jdbcEffect = JDBCEffect.withLogger[JDBCStream, JDBCIO](
+    JDBCIOConnection,
+    new JDBCLogger[JDBCIO] {
+      override def logPrepare(sql: String): JDBCIO[Unit]                = ZIO.effect(logSQL.debug(sql))
+      override def logBind(sql: String, values: Seq[Any]): JDBCIO[Unit] = ZIO.unit
     }
-  }
+  )
 
-  def withContext[A](f: UserContext => A): DB[A] =
-    Kleisli(uc => f(uc).pure[JDBCIO])
+  val getContext: URIO[UserContext, UserContext] = ZIO.environment
+  val getDBContext: URIO[UserContext with JDBCConnection, UserContext with JDBCConnection] =
+    ZIO.environment
+  val getInst: URIO[Institutional, Institution] = ZIO.access[Institutional](_.inst)
 
-  val flushDB: Stream[JDBCIO, WriteOp] => DB[Unit] =
-    a => Kleisli.liftF(a.flush.compile.drain)
+  def dbAttempt[A](db: DB[A]): DB[Either[Throwable, A]] = db.either
 
-  val translateDB = new (JDBCIO ~> DB) {
-    override def apply[A](fa: JDBCIO[A]): DB[A] = Kleisli.liftF(fa)
-  }
+  val instStream = Stream.eval(getInst)
 
-  def dbStream[A](f: UserContext => Stream[JDBCIO, A]): Stream[DB, A] =
-    Stream.eval[DB, UserContext](Kleisli.ask[JDBCIO, UserContext]).flatMap { uc =>
-      f(uc).translate(translateDB)
+  def dbStream[R <: UserContext, A](f: UserContext => Stream[RIO[R, *], A]): Stream[RIO[R, *], A] =
+    Stream.eval(getContext).flatMap(f)
+
+  def toJDBCStream[R <: JDBCConnection, A](
+      stream: Stream[RIO[R, *], A]): RIO[R, Stream[JDBCIO, A]] =
+    ZIO.environment[R].map { ctx =>
+      stream.translate(new (RIO[R, *] ~> JDBCIO) {
+        override def apply[A](fa: RIO[R, A]): JDBCIO[A] = fa.provide(ctx)
+      })
     }
+  def flushDB(writes: Stream[JDBCIO, JDBCWriteOp]): DB[Unit] = jdbcEffect.flush(writes)
 
-  def toJDBCStream[A](stream: Stream[DB, A]): DB[Stream[JDBCIO, A]] = getContext.map { ctx =>
-    stream.translate(new (DB ~> JDBCIO) {
-      override def apply[A](fa: DB[A]): JDBCIO[A] = fa.run(ctx)
-    })
-  }
 }

@@ -20,10 +20,9 @@ package com.tle.core.db.migration
 import java.time.Instant
 import java.util.{Date, UUID}
 
-import com.tle.core.db.DBSchema
+import com.tle.core.db._
 import com.tle.core.i18n.ServerStrings
 import com.tle.core.migration.MigrationResult
-import io.doolse.simpledba.jdbc.JDBCIO
 import cats.syntax.apply._
 import com.tle.core.db.tables.OEQEntity
 import com.tle.core.db.types.{DbUUID, LocaleStrings, UserId}
@@ -52,33 +51,32 @@ object NewEntityTable
     val SearchConfigPFX = "searchconfig."
     val queries         = DBSchema.queries
     val settingsQueries = queries.settingsQueries
-    settingsQueries
-      .prefixAnyInst(s"$SearchConfigPFX%")
-      .flatMap { setting =>
-        val uuid = UUID.fromString(setting.property.substring(SearchConfigPFX.length))
+    queries
+      .flush(
+        settingsQueries
+          .prefixAnyInst(s"$SearchConfigPFX%")
+          .flatMap { setting =>
+            val uuid = UUID.fromString(setting.property.substring(SearchConfigPFX.length))
 
-        val configJson = io.circe.parser
-          .parse(setting.value)
-          .getOrElse(Json.obj())
-          .withObject(_.remove("id").asJson)
+            val configJson = io.circe.parser
+              .parse(setting.value)
+              .getOrElse(Json.obj())
+              .withObject(_.remove("id").asJson)
 
-        val oeq = OEQEntity(
-          uuid = DbUUID(uuid),
-          inst_id = setting.institution_id,
-          typeid = "searchconfig",
-          s"Converted search configuration $uuid",
-          LocaleStrings.empty,
-          None,
-          LocaleStrings.empty,
-          UserId("system"),
-          Instant.now(),
-          Instant.now(),
-          configJson
-        )
-        queries.entityQueries.write.insert(oeq) ++ settingsQueries.write.delete(setting)
-      }
-      .flush
-      .compile
-      .drain
+            val oeq = OEQEntity(
+              uuid = DbUUID(uuid),
+              inst_id = setting.institution_id,
+              typeid = "searchconfig",
+              s"Converted search configuration $uuid",
+              LocaleStrings.empty,
+              None,
+              LocaleStrings.empty,
+              UserId("system"),
+              Instant.now(),
+              Instant.now(),
+              configJson
+            )
+            queries.entityQueries.write.insert(oeq) ++ settingsQueries.write.delete(setting)
+          })
   }
 }

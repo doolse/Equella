@@ -16,8 +16,6 @@ scalacOptions += "-Ypartial-unification"
 
 excludeDependencies ++= Seq("org.typelevel" % "scala-library")
 
-addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.9")
-
 libraryDependencies ++= Seq(
   "io.circe" %% "circe-core",
   "io.circe" %% "circe-generic",

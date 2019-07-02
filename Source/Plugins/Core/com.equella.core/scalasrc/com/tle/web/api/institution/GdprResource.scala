@@ -24,20 +24,20 @@ import java.util.zip.{ZipEntry, ZipOutputStream}
 import cats.data.Kleisli
 import com.fasterxml.jackson.databind.util.StdDateFormat
 import com.tle.common.usermanagement.user.CurrentUser
+import com.tle.core.db._
 import com.tle.core.db.tables.AuditLogEntry
 import com.tle.core.db.types.UserId
-import com.tle.core.db.{DBSchema, RunWithDB}
 import com.tle.exceptions.AccessDeniedException
 import com.tle.legacy.LegacyGuice
 import com.tle.web.api.users.UserDetails
-import io.circe.{Json, JsonObject}
+import io.circe.Json
 import io.circe.generic.auto._
 import io.circe.syntax._
-import io.doolse.simpledba.jdbc._
 import io.doolse.simpledba.syntax._
 import io.swagger.annotations.{Api, ApiParam}
 import javax.ws.rs._
 import javax.ws.rs.core.{Response, StreamingOutput}
+import zio.interop.catz._
 
 @Produces(value = Array("application/json"))
 @Path("userdata/")
@@ -81,8 +81,8 @@ class GdprResource {
   def delete(@PathParam("user") @ApiParam(value = "An ID (not a username) of a user",
                                           required = true) user: String): Response = {
     checkPriv()
-    RunWithDB.execute(Kleisli { uc =>
-      queries.deleteForUser((UserId(user), uc.inst)).flush.compile.drain
+    RunWithDB.execute(getContext.flatMap { uc =>
+      DBSchema.queries.flush(queries.deleteForUser((UserId(user), uc.inst)))
     })
     Response.ok().build()
   }
@@ -112,7 +112,7 @@ class GdprResource {
             def writeLogs() = {
               print.println("\"auditlog\": [")
               var first = true
-              RunWithDB.execute(Kleisli { uc =>
+              RunWithDB.execute(getContext.flatMap { uc =>
                 queries
                   .listForUser((UserId(user), uc.inst))
                   .map { ale =>

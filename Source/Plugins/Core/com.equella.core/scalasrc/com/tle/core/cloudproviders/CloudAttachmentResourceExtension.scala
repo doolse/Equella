@@ -30,7 +30,7 @@ import com.softwaremill.sttp._
 import com.tle.beans.item.Item
 import com.tle.beans.item.attachments.{CustomAttachment, IAttachment}
 import com.tle.common.NameValue
-import com.tle.core.db.{DB, RunWithDB}
+import com.tle.core.db._
 import com.tle.legacy.LegacyGuice
 import com.tle.web.sections.equella.viewers.AbstractResourceViewer
 import com.tle.web.sections.render.TextLabel
@@ -52,8 +52,10 @@ import com.tle.web.viewurl.{
 import fs2.Stream
 import io.circe.Json.Folder
 import io.circe.{Json, JsonNumber, JsonObject}
+import zio.Task
 
 import scala.collection.JavaConverters._
+import zio.interop.catz._
 
 class CloudAttachmentResourceExtension extends AttachmentResourceExtension[IAttachment] {
   override def process(info: SectionInfo,
@@ -85,7 +87,7 @@ case class CloudAttachmentViewableResource(info: SectionInfo,
     viewerId.filter(vId => viewerForId(provider, vId).isDefined).getOrElse("")
   }
   lazy val providerO = RunWithDB.executeWithHibernate {
-    CloudProviderDB.get(fields.providerId).value
+    CloudProviderDB.get(fields.providerId).optional
   }
 
   lazy val directLink = RunWithDB.executeWithHibernate {
@@ -184,7 +186,7 @@ case class CloudAttachmentViewableResource(info: SectionInfo,
             viewerDetails._2,
             provider,
             uriParameters,
-            uri => sttp.get(uri).response(asStream[Stream[IO, ByteBuffer]])))
+            uri => sttp.get(uri).response(asStream[Stream[Task, ByteBuffer]])))
       } yield response).value
     } match {
       case None => EmptyResponseStream
@@ -215,15 +217,15 @@ object MetaJsonFolder extends Folder[Any] {
     value.toMap.mapValues(_.foldWith(this))
 }
 
-case class SttpResponseContentStream(response: Response[fs2.Stream[IO, ByteBuffer]],
-                                     responseStream: fs2.Stream[IO, ByteBuffer])
+case class SttpResponseContentStream(response: Response[fs2.Stream[Task, ByteBuffer]],
+                                     responseStream: fs2.Stream[Task, ByteBuffer])
     extends AbstractContentStream(null, response.contentType.orNull) {
   override def getContentLength: Long      = response.contentLength.getOrElse(-1L)
   override def getInputStream: InputStream = null
   override def mustWrite(): Boolean        = true
   override def write(out: OutputStream): Unit = {
     val channel = Channels.newChannel(out)
-    responseStream.evalMap(bb => IO(channel.write(bb))).compile.drain.unsafeRunSync()
+    dbRuntime.unsafeRun(responseStream.evalMap(bb => Task(channel.write(bb))).compile.drain)
   }
 }
 

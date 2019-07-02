@@ -22,10 +22,9 @@ import java.util
 import java.util.{Calendar, Collections}
 
 import com.tle.common.i18n.StringLookup
-import com.tle.core.db.{DBSchema, RunWithDB}
+import com.tle.core.db._
 import com.tle.core.hibernate.CurrentDataSource
 import com.tle.core.migration.{Migration, MigrationExt, MigrationInfo, MigrationResult}
-import io.doolse.simpledba.jdbc.JDBCIO
 
 abstract class SimpleMigration(val id: String,
                                year: Int,

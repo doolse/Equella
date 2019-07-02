@@ -28,6 +28,7 @@ import com.tle.web.api.{ApiHelper, EntityPaging}
 import io.swagger.annotations.{Api, ApiOperation}
 import javax.ws.rs._
 import javax.ws.rs.core.Response
+import zio.interop.catz._
 
 @Api("Search page configuration")
 @Path("searches")
@@ -55,7 +56,7 @@ class SearchConfigApi {
   @Path("config/{uuid}")
   @ApiOperation(value = "Delete a search configuration")
   def deleteConfig(@PathParam("uuid") configId: UUID): Response = ApiHelper.runAndBuild {
-    SearchConfigDB.deleteConfig(configId).as(Response.noContent())
+    SearchConfigDB.deleteConfig(configId).map(_ => Response.noContent())
   }
 
   @PUT
@@ -95,7 +96,7 @@ class SearchConfigApi {
         .flatMap { sc =>
           SearchConfigDB.readConfig(sc.configId)
         }
-        .value
+        .optional
     } yield {
       (config, SearchDefaults.defaultMap.get(pagename)) match {
         case (Some(c), Some(d)) => Response.ok(SearchDefaults.mergeDefaults(d, c))

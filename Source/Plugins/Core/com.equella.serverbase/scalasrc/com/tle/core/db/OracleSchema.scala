@@ -24,23 +24,21 @@ import com.tle.core.db.types.{DbUUID, InstId, String255}
 import io.doolse.simpledba.Iso
 import io.doolse.simpledba.jdbc._
 import io.doolse.simpledba.jdbc.oracle._
-import shapeless.{::, Generic, HNil}
 import io.doolse.simpledba.syntax._
+import shapeless.{::, Generic, HNil}
 
 object OracleSchema extends DBSchemaMigration with DBSchema with DBQueries with StdOracleColumns {
 
-  implicit lazy val config = {
-    val escaped = StandardJDBC.escapeReserved(oracleReserved + "key") _
-    setupLogging(oracleConfig.copy(escapeColumnName = escaped))
-  }
-
+  lazy val mapper = oracleMapper
   lazy val hibSeq = Sequence[Long]("hibernate_sequence")
 
   def autoIdCol = longCol
 
-  override def insertAuditLog = insertWith(auditLog, hibSeq)
+  lazy val oracleQueries = new OracleQueries(mapper.dialect, queries.effect)
 
-  override def insertCachedValue = insertWith(cachedValues, hibSeq)
+  override def insertAuditLog = oracleQueries.insertWith(auditLog, hibSeq)
+
+  override def insertCachedValue = oracleQueries.insertWith(cachedValues, hibSeq)
 
   def dbUuidCol =
     wrap[String, DbUUID](stringCol,
@@ -49,14 +47,9 @@ object OracleSchema extends DBSchemaMigration with DBSchema with DBQueries with 
 
   override def cachedValueByValue
     : ((String255, String, InstId)) => fs2.Stream[JDBCIO, CachedValue] = {
-    val genCV = Generic[CachedValue]
-    JDBCQueries
-      .queryRawSQL(
+    queries
+      .sqlRecord[(String255, String, InstId), CachedValue](
         "SELECT id,cache_id,\"key\",ttl,value,institution_id FROM cached_value WHERE cache_id = ? AND to_char(value) = ? AND institution_id = ?",
-        config.record[String255 :: String :: InstId :: HNil],
-        config.record[genCV.Repr]
       )
-      .as[((String255, String, InstId)) => fs2.Stream[JDBCIO, genCV.Repr]]
-      .andThen(_.map(genCV.from))
   }
 }

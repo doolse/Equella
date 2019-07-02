@@ -23,23 +23,21 @@ import java.time.Instant
 import com.tle.core.db.tables._
 import com.tle.core.db.types.{DbUUID, InstId, String20, String255, UserId}
 import fs2.Stream
-import io.doolse.simpledba.{WriteOp, WriteQueries}
-import io.doolse.simpledba.jdbc.{JDBCColumn, JDBCIO, JDBCSQLConfig}
-import org.slf4j.LoggerFactory
+import io.doolse.simpledba.jdbc.JDBCWriteOp
 
 case class AuditLogQueries(
-    insertNew: (Long => AuditLogEntry) => Stream[JDBCIO, AuditLogEntry],
-    deleteForUser: ((UserId, InstId)) => Stream[JDBCIO, WriteOp],
+    insertNew: (Long => AuditLogEntry) => JDBCIO[AuditLogEntry],
+    deleteForUser: ((UserId, InstId)) => Stream[JDBCIO, JDBCWriteOp],
     listForUser: ((UserId, InstId)) => Stream[JDBCIO, AuditLogEntry],
-    deleteForInst: InstId => Stream[JDBCIO, WriteOp],
-    deleteBefore: Instant => Stream[JDBCIO, WriteOp],
+    deleteForInst: InstId => Stream[JDBCIO, JDBCWriteOp],
+    deleteBefore: Instant => Stream[JDBCIO, JDBCWriteOp],
     countForInst: InstId => Stream[JDBCIO, Int],
     listForInst: InstId => Stream[JDBCIO, AuditLogEntry]
 )
 
 case class ViewCountQueries(
-    writeItemCounts: WriteQueries[JDBCIO, ItemViewCount],
-    writeAttachmentCounts: WriteQueries[JDBCIO, AttachmentViewCount],
+    writeItemCounts: Writes[ItemViewCount],
+    writeAttachmentCounts: Writes[AttachmentViewCount],
     itemCount: ((InstId, DbUUID, Int)) => Stream[JDBCIO, ItemViewCount],
     allItemCount: InstId => Stream[JDBCIO, ItemViewCount],
     attachmentCount: (
@@ -50,39 +48,30 @@ case class ViewCountQueries(
     ) => Stream[JDBCIO, AttachmentViewCount],
     countForCollectionId: Long => Stream[JDBCIO, Int],
     attachmentCountForCollectionId: Long => Stream[JDBCIO, Int],
-    deleteForItemId: ((InstId, DbUUID, Int)) => Stream[JDBCIO, WriteOp]
+    deleteForItemId: ((InstId, DbUUID, Int)) => Stream[JDBCIO, JDBCWriteOp]
 )
 
 case class SettingsQueries(
-    write: WriteQueries[JDBCIO, Setting],
+    write: Writes[Setting],
     query: ((InstId, String)) => Stream[JDBCIO, Setting],
     prefixQuery: ((InstId, String)) => Stream[JDBCIO, Setting],
     prefixAnyInst: String => Stream[JDBCIO, Setting]
 )
 
 case class EntityQueries(
-    write: WriteQueries[JDBCIO, OEQEntity],
+    write: Writes[OEQEntity],
     allByType: ((InstId, String20)) => Stream[JDBCIO, OEQEntity],
     byId: ((InstId, DbUUID)) => Stream[JDBCIO, OEQEntity],
     allByInst: InstId => Stream[JDBCIO, OEQEntity]
 )
 
 case class CachedValueQueries(
-    insertNew: (Long => CachedValue) => Stream[JDBCIO, CachedValue],
-    writes: WriteQueries[JDBCIO, CachedValue],
+    insertNew: (Long => CachedValue) => JDBCIO[CachedValue],
+    writes: Writes[CachedValue],
     getForKey: ((String255, String255, InstId)) => Stream[JDBCIO, CachedValue],
     getForValue: ((String255, String, InstId)) => Stream[JDBCIO, CachedValue])
 
-object DBQueries {
-  val logSQL = LoggerFactory.getLogger("org.hibernate.SQL")
-}
-
 trait DBQueries {
-
-  type C[A] <: JDBCColumn
-
-  def setupLogging(config: JDBCSQLConfig[C]): JDBCSQLConfig[C] =
-    config.withPrepareLogger(sql => DBQueries.logSQL.debug(sql))
 
   def auditLogQueries: AuditLogQueries
 
@@ -93,4 +82,6 @@ trait DBQueries {
   def entityQueries: EntityQueries
 
   def cachedValueQueries: CachedValueQueries
+
+  def flush(s: Stream[JDBCIO, JDBCWriteOp]): JDBCIO[Unit]
 }

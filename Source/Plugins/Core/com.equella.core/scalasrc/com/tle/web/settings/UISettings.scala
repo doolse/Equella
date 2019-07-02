@@ -18,13 +18,12 @@
 
 package com.tle.web.settings
 
-import cats.effect.IO
-import cats.syntax.apply._
-import com.tle.core.cache.{Cache, DBCacheBuilder, InstCacheable}
-import com.tle.core.db.{DB, RunWithDB}
+import com.tle.core.cache.{DBCacheBuilder, InstCacheable}
+import com.tle.core.db._
 import com.tle.core.settings.SettingsDB
 import io.circe.generic.extras.Configuration
 import io.circe.generic.extras.auto._
+import zio.Task
 
 case class NewUISettings(enabled: Boolean, newSearch: Boolean = false)
 
@@ -39,14 +38,15 @@ object UISettings {
 
   val defaultSettings = UISettings(NewUISettings(enabled = false))
 
-  val getUISettings: DB[Option[UISettings]] = SettingsDB.jsonProperty[UISettings](UIPropName).value
+  val getUISettings: DB[Option[UISettings]] =
+    SettingsDB.jsonProperty[UISettings](UIPropName).optional
 
   val uiSettingsCache =
     DBCacheBuilder.buildCache(InstCacheable[Option[UISettings]]("uiSettings", _ => getUISettings))
 
-  def setUISettings(in: UISettings): DB[IO[Unit]] =
+  def setUISettings(in: UISettings): DB[Task[Unit]] =
     SettingsDB.setJsonProperty(UIPropName, in) *>
-      uiSettingsCache.invalidate.apply()
+      getDBContext.map(ctx => uiSettingsCache.invalidate.apply().provide(ctx))
 
   def cachedUISettings: DB[Option[UISettings]] = uiSettingsCache.get.apply()
 }

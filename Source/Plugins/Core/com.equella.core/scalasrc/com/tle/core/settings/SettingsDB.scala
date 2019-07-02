@@ -18,17 +18,15 @@
 
 package com.tle.core.settings
 
-import cats.data.{Kleisli, OptionT}
-import cats.syntax.applicative._
-import com.tle.core.db.tables.Setting
 import com.tle.core.db._
+import com.tle.core.db.tables.Setting
 import com.tle.core.security.AclChecks
+import fs2.Stream
 import io.circe.parser._
 import io.circe.syntax._
 import io.circe.{Decoder, Encoder}
-import io.doolse.simpledba.jdbc._
-import io.doolse.simpledba.syntax._
-import fs2.Stream
+import zio.ZIO
+import zio.interop.catz._
 
 object SettingsDB {
 
@@ -36,11 +34,13 @@ object SettingsDB {
 
   private val q = DBSchema.queries.settingsQueries
 
-  def singleProperty(name: String): OptionT[DB, Setting] = OptionT {
-    Kleisli { uc =>
-      q.query(uc.inst, name).compile.last
-    }
-  }
+  def singleProperty(name: String): OptionT[InstDBR, Setting] =
+    ZIO
+      .environment[Institutional]
+      .flatMap { i =>
+        q.query(i.inst, name).compile.last
+      }
+      .some
 
   def multiProperties(prefix: String): Stream[DB, Setting] =
     dbStream(uc => q.prefixQuery(uc.inst, prefix))
@@ -48,27 +48,25 @@ object SettingsDB {
   def decodeSetting[A](f: Setting => A => A)(s: Setting)(implicit dec: Decoder[A]): A =
     parse(s.value).flatMap(dec.decodeJson).fold(throw _, f(s))
 
-  def jsonProperty[A: Decoder](name: String): OptionT[DB, A] =
+  def jsonProperty[A: Decoder](name: String): OptionT[DBR, A] =
     singleProperty(name).map(decodeSetting[A](_ => identity))
 
   def jsonProperties[A: Decoder](prefix: String, f: String => A => A): Stream[DB, A] =
     multiProperties(prefix + "%").map(decodeSetting[A](s => f(s.property.substring(prefix.length))))
 
-  def mkSetting(name: String, value: String): DB[Setting] = Kleisli { uc =>
-    Setting(uc.inst, name, value).pure[JDBCIO]
+  def mkSetting(name: String, value: String): DB[Setting] = getContext.map { uc =>
+    Setting(uc.inst, name, value)
   }
 
   def setJsonProperty[A: Encoder: Decoder](name: String, value: A): DB[Unit] = {
     val newJson = value.asJson.noSpaces
     for {
       newSetting <- mkSetting(name, newJson)
-      existProp  <- singleProperty(name).value
-      _ <- Kleisli.liftF {
-        (existProp match {
-          case None           => q.write.insert(newSetting)
-          case Some(existing) => q.write.update(existing, newSetting)
-        }).flush.compile.drain
-      }
+      existProp  <- singleProperty(name).optional
+      _ <- DBSchema.queries.flush(existProp match {
+        case None           => q.write.insert(newSetting)
+        case Some(existing) => q.write.update(existing, newSetting)
+      })
     } yield ()
   }
 

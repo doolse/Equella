@@ -34,6 +34,7 @@ import com.tle.web.oauth.service.OAuthWebService.AuthorisationDetails
 import com.tle.web.oauth.service.{IOAuthClient, IOAuthToken}
 import javax.servlet.http.HttpServletRequest
 import fs2.Stream
+import zio.interop.catz._
 
 object OAuthServerAccess {
 
@@ -135,16 +136,18 @@ object OAuthServerAccess {
               case None =>
                 val tokenUuid = UUID.randomUUID().toString
                 val expires   = Instant.now().plus(TokenTimeout)
-                tokenQueries
-                  .insertNew { valueId =>
-                    CachedValue(valueId,
-                                CloudTokenCache,
-                                tokenUuid,
-                                Some(expires),
-                                clientId.toString,
-                                context.inst)
-                  }
-                  .map(_ => CloudAuthToken(tokenUuid, expires))
+                Stream.eval {
+                  tokenQueries
+                    .insertNew { valueId =>
+                      CachedValue(valueId,
+                                  CloudTokenCache,
+                                  tokenUuid,
+                                  Some(expires),
+                                  clientId.toString,
+                                  context.inst)
+                    }
+                    .map(_ => CloudAuthToken(tokenUuid, expires))
+                }
             }
           } yield token
         }.compile.lastOrError

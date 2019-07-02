@@ -27,17 +27,25 @@ import com.tle.common.usermanagement.user.{CurrentUser, UserState}
 import com.tle.core.hibernate.CurrentDataSource
 import javax.sql.DataSource
 
-case class UserContext(inst: Institution, user: UserState, ds: DataSource, locale: Locale)
+trait Institutional {
+  def inst: Institution
+}
+
+trait UserContext extends Institutional {
+  def user: UserState
+  def locale: Locale
+  def datasource: DataSource
+}
 
 object UserContext {
 
   def fromThreadLocals(): UserContext = {
-    UserContext(
-      CurrentInstitution.get(),
-      CurrentUser.getUserState,
-      CurrentDataSource.get().getDataSource,
-      CurrentLocale.getLocale
-    )
+    new UserContext {
+      val inst       = CurrentInstitution.get()
+      val user       = CurrentUser.getUserState
+      val locale     = CurrentLocale.getLocale
+      val datasource = Option(CurrentDataSource.get()).map(_.getDataSource).orNull
+    }
   }
 
 }

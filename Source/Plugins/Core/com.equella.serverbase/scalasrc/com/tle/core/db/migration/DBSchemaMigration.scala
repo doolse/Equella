@@ -18,24 +18,32 @@
 
 package com.tle.core.db.migration
 
+import com.tle.core.db._
 import com.tle.core.migration.{MigrationResult, MigrationStatusLog}
 import fs2.Stream
 import io.doolse.simpledba.jdbc._
-import io.doolse.simpledba.syntax._
+import zio.{RIO, ZIO}
 
 trait DBSchemaMigration {
 
-  type C[A] <: JDBCColumn
-  def config: JDBCSQLConfig[C]
-  def schemaSQL: JDBCSchemaSQL
+  type C[A] <: JDBCColumn[A]
+  def schemaSQL: SQLDialect
+  def mapper: JDBCMapper[C]
 
-  def withSQLLog(progress: MigrationResult): JDBCConfig = {
-    config.withPrepareLogger(sql => progress.addLogEntry(new MigrationStatusLog(sql, false)))
+  def withSQLLog(progress: MigrationResult): JDBCQueries[C, JDBCStream, JDBCIO] = {
+    val subLogger = jdbcEffect.withLogger(new JDBCLogger[JDBCIO] {
+      override def logPrepare(sql: String): JDBCIO[Unit] = ZIO.effect {
+        progress.addLogEntry(new MigrationStatusLog(sql, false))
+      }
+
+      override def logBind(sql: String, values: Seq[Any]): JDBCIO[Unit] = ZIO.unit
+    })
+    mapper.queries(subLogger)
   }
 
   def sqlStmts(progress: MigrationResult, sql: Seq[String]): JDBCIO[Unit] = {
-    implicit val c = withSQLLog(progress)
-    Stream.emits(sql.map(rawSQL)).covary[JDBCIO].flush.compile.drain
+    val queries = withSQLLog(progress)
+    queries.flush(Stream.emits(sql.map(queries.sql)).covary[JDBCIO])
   }
 
   def addColumns(columns: TableColumns, progress: MigrationResult): JDBCIO[Unit] = {
@@ -65,4 +73,6 @@ trait DBSchemaMigration {
 
   def newEntityTables: Seq[TableDefinition]
   def newEntityIndexes: Seq[(TableColumns, String)]
+
+  def creationSQL: java.util.Collection[String]
 }

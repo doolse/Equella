@@ -20,15 +20,14 @@ package com.tle.core.db.dao
 import java.time.Instant
 import java.util.UUID
 
-import cats.data.OptionT
 import com.tle.core.db._
 import com.tle.core.db.tables.OEQEntity
 import com.tle.core.db.types.{DbUUID, LocaleStrings, UserId}
 import fs2.Stream
 import io.circe.Json
+import io.doolse.simpledba.Iso
 import io.doolse.simpledba.jdbc._
-import io.doolse.simpledba.{Iso, WriteOp}
-import io.doolse.simpledba.syntax._
+import zio.interop.catz._
 
 trait EntityDBExt[A] {
   def iso: Iso[OEQEntity, A]
@@ -37,10 +36,11 @@ trait EntityDBExt[A] {
 
 object EntityDB {
 
-  val queries = DBSchema.queries.entityQueries
+  def flush(s: Stream[JDBCIO, JDBCWriteOp]) = DBSchema.queries.flush(s)
+  val queries                               = DBSchema.queries.entityQueries
 
   def newEntity[A](uuid: UUID)(implicit ee: EntityDBExt[A]): DB[OEQEntity] =
-    withContext(
+    getContext.map(
       uc =>
         OEQEntity(
           uuid = DbUUID(uuid),
@@ -57,38 +57,36 @@ object EntityDB {
       )
     )
 
-  def readAll[A](implicit ee: EntityDBExt[A]): Stream[DB, A] =
-    dbStream { uc =>
-      queries.allByType(uc.inst, ee.typeId).map(ee.iso.to)
+  def readAll[A](implicit ee: EntityDBExt[A]): Stream[InstDB, A] =
+    instStream.flatMap { inst =>
+      queries.allByType(inst, ee.typeId).map(ee.iso.to)
     }
 
-  def delete(uuid: UUID): Stream[DB, Unit] = {
-    dbStream { uc =>
+  def delete(uuid: UUID): Stream[InstDB, Unit] = {
+    instStream.flatMap { inst =>
       for {
-        oeq <- queries.byId(uc.inst, DbUUID(uuid))
-        _   <- queries.write.delete(oeq).flush
+        oeq <- queries.byId(inst, DbUUID(uuid))
+        _   <- Stream.eval(flush(queries.write.delete(oeq)))
       } yield ()
     }
   }
 
-  def readOneStream[A](uuid: UUID)(implicit ee: EntityDBExt[A]): Stream[DB, A] =
-    dbStream { uc =>
-      queries.byId(uc.inst, DbUUID(uuid)).map(ee.iso.to)
+  def readOneStream[A](uuid: UUID)(implicit ee: EntityDBExt[A]): Stream[InstDB, A] =
+    instStream.flatMap { inst =>
+      queries.byId(inst, DbUUID(uuid)).map(ee.iso.to)
     }
 
-  def readOne[A](uuid: UUID)(implicit ee: EntityDBExt[A]): OptionT[DB, A] =
-    OptionT {
-      readOneStream[A](uuid).compile.last
-    }
+  def readOne[A](uuid: UUID)(implicit ee: EntityDBExt[A]): OptionT[InstDBR, A] =
+    readOneStream[A](uuid).compile.last.some
 
   def update[A](original: OEQEntity, editedData: A)(
       implicit ee: EntityDBExt[A]
-  ): Stream[JDBCIO, WriteOp] = {
+  ): Stream[JDBCIO, JDBCWriteOp] = {
 
     queries.write.update(original, ee.iso.from(editedData))
   }
 
-  def create[A](newEntity: A)(implicit ee: EntityDBExt[A]): Stream[JDBCIO, WriteOp] = {
+  def create[A](newEntity: A)(implicit ee: EntityDBExt[A]): Stream[JDBCIO, JDBCWriteOp] = {
     queries.write.insert(ee.iso.from(newEntity))
   }
 
