@@ -21,6 +21,7 @@ package com.tle.web.api.cloudprovider
 import java.util.UUID
 
 import cats.syntax.functor._
+import com.tle.beans.Institution
 import com.tle.core.cloudproviders._
 import com.tle.core.db._
 import com.tle.core.settings.SettingsDB
@@ -30,6 +31,7 @@ import com.tle.web.settings.SettingsList
 import io.lemonlabs.uri.Url
 import io.lemonlabs.uri.parsing.UrlParser
 import io.swagger.annotations.{Api, ApiOperation}
+import javax.servlet.http.HttpServletRequest
 import javax.ws.rs._
 import javax.ws.rs.core._
 import org.jboss.resteasy.annotations.cache.NoCache
@@ -51,6 +53,7 @@ class CloudProviderApi {
   @ApiOperation(value = "Register a cloud provider",
                 response = classOf[CloudProviderRegistrationResponse])
   def register(@QueryParam(TokenParam) @DefaultValue("") regtoken: String,
+               @Context req: HttpServletRequest,
                registration: CloudProviderRegistration): Response = {
     ApiHelper.runAndBuild {
       for {
@@ -58,7 +61,7 @@ class CloudProviderApi {
         validatedInstance <- CloudProviderService.register(regtoken, registration)
       } yield {
         val forwardUrl = UriBuilder
-          .fromUri(ctx.inst.getUrlAsUri)
+          .fromUri(LegacyGuice.urlService.getBaseInstitutionURI(ctx.inst, req))
           .path(SettingsList.CloudProviderListPage)
           .build()
           .toString
@@ -78,6 +81,7 @@ class CloudProviderApi {
       "'register' - a relative URI which the cloud provider should post it's registration to."
   )
   def prepareRegistration(@QueryParam("url") @DefaultValue("") providerUrl: String,
+                          @Context req: HttpServletRequest,
                           @Context uriInfo: UriInfo): CloudProviderForward = {
     checkPermissions()
     UrlParser.parseUrl(providerUrl) match {
@@ -86,6 +90,7 @@ class CloudProviderApi {
           SettingsDB.ensureEditSystem {
             for {
               token <- CloudProviderService.createRegistrationToken
+              inst  <- getContext.map(_.inst)
             } yield {
               val returnUrl = ApiHelper
                 .apiUriBuilder()
@@ -96,7 +101,8 @@ class CloudProviderApi {
                 .toString
               CloudProviderForward(
                 u.addParam(RegistrationParam, returnUrl)
-                  .addParam(InstUrl, LegacyGuice.urlService.getBaseInstitutionURI.toString)
+                  .addParam(InstUrl,
+                            LegacyGuice.urlService.getBaseInstitutionURI(inst, req).toString)
                   .toString)
             }
           }

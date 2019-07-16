@@ -75,7 +75,9 @@ public class ShowInstitutionsSection extends AbstractPrototypeSection<ShowInstit
                     return new InstitutionDisplay(
                         institution.getName(),
                         institutionSection.getBadgeUrl(context, institution.getUniqueId()),
-                        new HtmlLinkState(new SimpleBookmark(institution.getUrl())));
+                        new HtmlLinkState(
+                            new SimpleBookmark(
+                                institutionService.getInstitutionUrl(institution).toString())));
                   }
                 }));
     Collections.sort(is, INSTITUTION_COMPARATOR);

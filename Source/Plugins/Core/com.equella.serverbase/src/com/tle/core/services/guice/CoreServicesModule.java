@@ -40,6 +40,7 @@ public class CoreServicesModule extends MandatoryConfigModule {
     @Override
     protected void configure() {
       bindInt("taskService.maxConcurrentTasks", 26);
+      bindBoolean("institution.ignorehost", false);
 
       if (Check.isEmpty(getProperty("zookeeper.instances"))) {
         bind(TaskService.class).to(LocalTaskServiceImpl.class).in(Singleton.class);

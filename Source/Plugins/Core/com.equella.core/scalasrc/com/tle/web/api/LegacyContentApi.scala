@@ -137,8 +137,8 @@ object LegacyContentController extends AbstractSectionsController with SectionFi
     }
   }
 
-  def internalRoute(uri: String): Option[String] = {
-    relativeURI(uri).filter(isClientPath).map(r => "/" + r.toString())
+  def internalRoute(uri: String, req: HttpServletRequest): Option[String] = {
+    relativeURI(uri, req).filter(isClientPath).map(r => "/" + r.toString())
   }
 
   override lazy val getExceptionHandlers: util.Collection[ExceptionHandlerMatch] = {
@@ -150,8 +150,9 @@ object LegacyContentController extends AbstractSectionsController with SectionFi
       .asJavaCollection
   }
 
-  def relativeURI(uri: String): Option[RelativeUrl] = {
-    val baseUrl   = AbsoluteUrl.parse(urlService.getBaseInstitutionURI.toString)
+  def relativeURI(uri: String, req: HttpServletRequest): Option[RelativeUrl] = {
+    val baseUrl =
+      AbsoluteUrl.parse(urlService.getBaseInstitutionURI(CurrentInstitution.get, req).toString)
     val Host      = baseUrl.host
     val Port      = baseUrl.port
     val basePaths = baseUrl.path.parts.filter(_.length > 0)
@@ -360,7 +361,7 @@ class LegacyContentApi {
                   new BookmarkAndModify(context,
                                         menuLink.getHandlerMap.getHandler("click").getModifier))
                 .getHref
-              val route   = Option(mc.getRoute).orElse(LegacyContentController.internalRoute(href))
+              val route   = Option(mc.getRoute).orElse(LegacyContentController.internalRoute(href, req))
               val iconUrl = if (mc.isCustomImage) Some(mc.getBackgroundImagePath) else None
               MenuItem(
                 menuLink.getLabelText,
@@ -471,7 +472,7 @@ class LegacyContentApi {
     Option(req.getAttribute(LegacyContentController.RedirectedAttr).asInstanceOf[String]).map {
       url =>
         Response.ok {
-          LegacyContentController.internalRoute(url) match {
+          LegacyContentController.internalRoute(url, req) match {
             case Some(relative) => InternalRedirect(relative.substring(1), userChanged(req))
             case _              => ExternalRedirect(url)
           }

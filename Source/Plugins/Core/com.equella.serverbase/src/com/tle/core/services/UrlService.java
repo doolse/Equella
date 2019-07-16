@@ -18,6 +18,7 @@
 
 package com.tle.core.services;
 
+import com.tle.beans.Institution;
 import hurl.build.QueryBuilder;
 import java.net.URI;
 import java.net.URL;
@@ -33,7 +34,7 @@ public interface UrlService {
 
   URI getBaseUriFromRequest(HttpServletRequest request);
 
-  URI getBaseInstitutionURI();
+  URI getBaseInstitutionURI(Institution inst, HttpServletRequest request);
 
   boolean isRelativeUrl(String url);
 }

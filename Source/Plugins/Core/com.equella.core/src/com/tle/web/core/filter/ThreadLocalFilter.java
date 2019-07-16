@@ -27,6 +27,7 @@ import com.tle.core.i18n.ServerSideTimeZoneImplementation;
 import com.tle.core.plugins.PluginService;
 import com.tle.core.plugins.PluginTracker;
 import com.tle.core.services.user.UserSessionService;
+import com.tle.web.CurrentRequest;
 import com.tle.web.dispatcher.FilterResult;
 import java.io.IOException;
 import javax.inject.Inject;
@@ -50,6 +51,7 @@ public class ThreadLocalFilter extends OncePerRequestFilter {
       throws ServletException, IOException {
     CurrentUser.setUserState(null);
     CurrentInstitution.remove();
+    CurrentRequest.remove();
     bundleCache.reset();
     userSessionService.unbind();
     serverSideLocaleImplementation.clearThreadLocals();

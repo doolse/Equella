@@ -18,6 +18,8 @@
 
 package com.tle.web.institution;
 
+import static com.dytech.edge.web.WebConstants.ADMIN_HOME_PAGE;
+
 import com.dytech.edge.web.WebConstants;
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
@@ -38,6 +40,7 @@ import com.tle.core.institution.events.InstitutionEvent;
 import com.tle.core.institution.events.listeners.InstitutionListener;
 import com.tle.core.services.UrlService;
 import com.tle.core.system.service.SchemaDataSourceService;
+import com.tle.web.CurrentRequest;
 import com.tle.web.core.filter.OncePerRequestFilter;
 import com.tle.web.dispatcher.FilterResult;
 import com.tle.web.dispatcher.RemappedRequest;
@@ -50,6 +53,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import javax.inject.Inject;
+import javax.inject.Named;
 import javax.inject.Singleton;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
@@ -64,11 +68,24 @@ public class InstitutionFilter extends OncePerRequestFilter implements Instituti
   @Inject private InstitutionService institutionService;
   @Inject private SchemaDataSourceService databaseSchemaService;
 
+  @Inject
+  @Named("institution.ignorehost")
+  private boolean ignoreHost;
+
   // Ugh, these should be pluginerised
   private static final String[] ALLOWED_URL_BEGINNINGS = {"progress", "configurable"};
   private static final String[] ALLOWED_URL_ENDINGS = {
     ".css", ".js", ".jpeg", ".jpg", ".gif", ".png", ".ico", ".zip", ".war", ".jar", ".woff",
   };
+
+  public static boolean validAdminUrl(String path) {
+    return isValidUrlStart(path)
+        || isValidUrlEnding(path)
+        || path.equals("invoke.heartbeat")
+        || path.equals("migration.do")
+        || path.startsWith("api/")
+        || path.equals(ADMIN_HOME_PAGE);
+  }
 
   private static final Logger LOGGER = Logger.getLogger(InstitutionFilter.class);
 
@@ -141,6 +158,10 @@ public class InstitutionFilter extends OncePerRequestFilter implements Instituti
   @Override
   protected FilterResult doFilterInternal(HttpServletRequest request, HttpServletResponse response)
       throws ServletException, IOException {
+    CurrentRequest.set(request);
+    if (ignoreHost) {
+      return PathInstitutionFilter$.MODULE$.filter(request, response, getInstitutions());
+    }
     final Set<String> matchStrings = getMatchStrings(request);
     final Pair<String, Pair<String, InstitutionStatus>> matchInstPair =
         getInstitutionForUrl(matchStrings);
@@ -227,14 +248,8 @@ public class InstitutionFilter extends OncePerRequestFilter implements Instituti
       if (path.equals("crossdomain.xml")) {
         response.sendError(404);
       } else {
-        boolean noRedir =
-            isValidUrlStart(path)
-                || isValidUrlEnding(path)
-                || path.equals("invoke.heartbeat")
-                || path.equals("migration.do")
-                || path.startsWith("api/");
-        if (!noRedir && !path.equals("institutions.do")) {
-          response.sendRedirect(adminUrl + "institutions.do");
+        if (!validAdminUrl(path)) {
+          response.sendRedirect(adminUrl + ADMIN_HOME_PAGE);
           return FilterResult.FILTER_CONTINUE;
         }
       }
@@ -264,7 +279,7 @@ public class InstitutionFilter extends OncePerRequestFilter implements Instituti
         RemappedRequest.wrap(request, contextPath, servletPath, request.getPathInfo()));
   }
 
-  private boolean isValidUrlStart(String path) {
+  private static boolean isValidUrlStart(String path) {
     for (String s : ALLOWED_URL_BEGINNINGS) {
       if (path.startsWith(s)) {
         return true;
@@ -273,7 +288,7 @@ public class InstitutionFilter extends OncePerRequestFilter implements Instituti
     return false;
   }
 
-  private boolean isValidUrlEnding(String path) {
+  private static boolean isValidUrlEnding(String path) {
     for (String s : ALLOWED_URL_ENDINGS) {
       if (path.endsWith(s)) {
         return true;

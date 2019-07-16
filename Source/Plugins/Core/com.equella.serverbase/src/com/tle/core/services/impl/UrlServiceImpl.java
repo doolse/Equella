@@ -48,11 +48,15 @@ public class UrlServiceImpl implements UrlService {
 
   private final URL adminUrl;
   private static UrlService instance;
+  private final boolean ignoreHost;
 
   @Inject
-  public UrlServiceImpl(@Named("admin.url") URL adminUrl) {
+  public UrlServiceImpl(
+      @Named("admin.url") URL adminUrl, @Named("institution.ignorehost") boolean ignoreHost) {
     this.adminUrl = append(adminUrl, "");
+    this.ignoreHost = ignoreHost;
     LOGGER.info("Admin URL is " + adminUrl.toString());
+    LOGGER.info("Ignore institution host is set to: " + ignoreHost);
     instance = this;
   }
 
@@ -100,11 +104,22 @@ public class UrlServiceImpl implements UrlService {
     return qbuilder;
   }
 
+  private UriBuilder builderForInstRequest(Institution inst, HttpServletRequest request) {
+    URI base = inst == null ? URI.create(getAdminUrl().toString()) : inst.getUrlAsUri();
+    UriBuilder builder = UriBuilder.create(base);
+    if (request != null) {
+      builder.setScheme(request.isSecure() ? "https" : "http");
+      if (ignoreHost) {
+        builder.setHost(request.getHeader("Host"));
+        builder.setPort(-1);
+      }
+    }
+    return builder;
+  }
+
   @Override
   public URI getUriForRequest(HttpServletRequest request, String query) {
-    URI uri = getBaseInstitutionURI();
-    UriBuilder builder = UriBuilder.create(uri);
-    builder.setScheme(request.isSecure() ? "https" : "http");
+    UriBuilder builder = builderForInstRequest(CurrentInstitution.get(), request);
     builder.setPath(request.getRequestURI());
     builder.setQuery(query);
     return builder.build();
@@ -112,16 +127,12 @@ public class UrlServiceImpl implements UrlService {
 
   @Override
   public URI getBaseUriFromRequest(HttpServletRequest request) {
-    URI uri = getBaseInstitutionURI();
-    UriBuilder builder = UriBuilder.create(uri);
-    builder.setScheme(request.isSecure() ? "https" : "http");
-    return builder.build();
+    return builderForInstRequest(CurrentInstitution.get(), request).build();
   }
 
   @Override
-  public URI getBaseInstitutionURI() {
-    Institution institution = CurrentInstitution.get();
-    return (institution == null ? URI.create(getAdminUrl().toString()) : institution.getUrlAsUri());
+  public URI getBaseInstitutionURI(Institution inst, HttpServletRequest request) {
+    return builderForInstRequest(inst, request).build();
   }
 
   @Override

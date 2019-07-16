@@ -50,6 +50,8 @@ public final class WebConstants {
   // TODO: extension point?
   public static final String DEFAULT_HOME_PAGE = DASHBOARD_PAGE;
 
+  public static final String ADMIN_HOME_PAGE = "institutions.do";
+
   private WebConstants() {
     throw new Error();
   }

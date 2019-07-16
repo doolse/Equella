@@ -58,6 +58,7 @@ import com.tle.core.services.impl.BeanClusteredTask;
 import com.tle.core.services.impl.SimpleMessage;
 import com.tle.core.services.impl.Task;
 import com.tle.core.system.dao.DatabaseSchemaDao;
+import com.tle.web.CurrentRequest;
 import java.lang.ref.WeakReference;
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -325,10 +326,11 @@ public class InstitutionServiceImpl
 
   @Override
   public URL getInstitutionUrl(Institution institution) {
-    if (institution == null) {
-      return urlService.getAdminUrl();
+    try {
+      return urlService.getBaseInstitutionURI(institution, CurrentRequest.get()).toURL();
+    } catch (MalformedURLException e) {
+      throw malformedUrl(e, institution.getUrl());
     }
-    return institution.getUrlAsUrl();
   }
 
   @Override

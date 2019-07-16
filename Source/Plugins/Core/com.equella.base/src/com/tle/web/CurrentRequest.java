@@ -16,23 +16,23 @@
  * limitations under the License.
  */
 
-package com.tle.web.api.item
+package com.tle.web;
 
-import com.tle.legacy.LegacyGuice.urlService
-import io.lemonlabs.uri.{AbsoluteUrl, RelativeUrl, Url}
-import javax.servlet.http.HttpServletRequest
+import javax.servlet.http.HttpServletRequest;
 
-object ItemUrlDisplay {
+public class CurrentRequest {
+  private static final ThreadLocal<HttpServletRequest> localReq =
+      new ThreadLocal<HttpServletRequest>();
 
-  def addBaseUri(path: String, req: HttpServletRequest): String = {
-    Url.parse(path) match {
-      case rurl: RelativeUrl =>
-        AbsoluteUrl
-          .parse(urlService.getBaseUriFromRequest(req).toString)
-          .withPath(rurl.path)
-          .withQueryString(rurl.query)
-          .toString()
-      case url => url.toString()
-    }
+  public static HttpServletRequest get() {
+    return localReq.get();
+  }
+
+  public static void set(HttpServletRequest req) {
+    localReq.set(req);
+  }
+
+  public static void remove() {
+    localReq.remove();
   }
 }

@@ -27,7 +27,6 @@ import com.tle.core.activation.service.ActivationService;
 import com.tle.core.encryption.EncryptionService;
 import com.tle.core.events.services.EventService;
 import com.tle.core.freetext.service.FreeTextService;
-import com.tle.core.hibernate.HibernateService;
 import com.tle.core.i18n.service.LanguageService;
 import com.tle.core.institution.InstitutionService;
 import com.tle.core.item.edit.ItemEditorService;
@@ -47,6 +46,7 @@ import com.tle.core.services.user.UserPreferenceService;
 import com.tle.core.services.user.UserService;
 import com.tle.core.services.user.UserSessionService;
 import com.tle.core.settings.service.ConfigurationService;
+import com.tle.core.system.service.SchemaDataSourceService;
 import com.tle.core.usermanagement.standard.dao.TLEUserDao;
 import com.tle.web.contentrestrictions.ContentRestrictionsPrivilegeTreeProvider;
 import com.tle.web.coursedefaults.CourseDefaultsSettingsPrivilegeTreeProvider;
@@ -215,6 +215,8 @@ public class LegacyGuice extends AbstractModule {
   @Inject public static AccessibilityModeService accessibilityModeService;
 
   @Inject public static HibernateService hibernateService;
+
+  @Inject public static SchemaDataSourceService schemaDataSourceService;
 
   @Override
   protected void configure() {

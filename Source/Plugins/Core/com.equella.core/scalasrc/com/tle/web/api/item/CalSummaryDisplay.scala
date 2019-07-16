@@ -71,9 +71,10 @@ object CalSummaryDisplay {
                           item: Item,
                           vi: NewDefaultViewableItem,
                           at: Attachment) = {
-    val vr     = LegacyGuice.attachmentResourceService.getViewableResource(info, vi, at)
-    val ls     = LegacyGuice.viewItemService.getViewableLink(info, vr, null).getLinkState
-    val href   = Option(ls.getBookmark).map(b => ItemUrlDisplay.addBaseUri(b.getHref))
+    val vr = LegacyGuice.attachmentResourceService.getViewableResource(info, vi, at)
+    val ls = LegacyGuice.viewItemService.getViewableLink(info, vr, null).getLinkState
+    val href =
+      Option(ls.getBookmark).map(b => ItemUrlDisplay.addBaseUri(b.getHref, info.getRequest))
     val atUuid = at.getUuid
     val status = LegacyGuice.calWebService.getStatus(info, item, atUuid) match {
       case ActivateRequest.TYPE_ACTIVE   => "active"
