@@ -84,6 +84,10 @@ public class ClusterMessagingServiceImpl
   private boolean useHostname;
 
   @Inject(optional = true)
+  @Named("messaging.domain")
+  private String messagingDomain;
+
+  @Inject(optional = true)
   @Named("messaging.bindPort")
   private int bindPort;
 
@@ -205,6 +209,9 @@ public class ClusterMessagingServiceImpl
       if (Check.isEmpty(bindAddress)) {
         if (useHostname) {
           bindAddress = InetAddress.getLocalHost().getHostName();
+          if (messagingDomain != null) {
+            bindAddress = bindAddress + "." + messagingDomain;
+          }
         } else {
           List<Pair<NetworkInterface, InetAddress>> inetAddresses = NetworkUtils.getInetAddresses();
           if (inetAddresses.size() == 1) {
