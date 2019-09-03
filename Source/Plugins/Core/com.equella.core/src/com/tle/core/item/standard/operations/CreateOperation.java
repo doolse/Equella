@@ -29,8 +29,11 @@ import com.tle.beans.item.ItemPack;
 import com.tle.beans.item.ItemStatus;
 import com.tle.common.Check;
 import com.tle.common.filesystem.handle.StagingFile;
+import com.tle.common.institution.CurrentInstitution;
 import com.tle.common.usermanagement.user.CurrentUser;
 import com.tle.core.filesystem.staging.service.StagingService;
+import com.tle.core.institution.Limited;
+import com.tle.core.institution.Limits;
 import com.tle.core.item.helper.ItemHelper;
 import java.util.Date;
 import java.util.UUID;
@@ -100,6 +103,7 @@ public class CreateOperation extends AbstractStandardWorkflowOperation {
     if (Check.isEmpty(itemBean.getUuid())) {
       itemBean.setUuid(UUID.randomUUID().toString());
     }
+    Limits.creation().checkLimit(Limited.Item(), CurrentInstitution.get());
     itemBean.setVersion(1);
     itemBean.setNewItem(true);
     itemBean.setStatus(status);

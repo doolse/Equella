@@ -27,12 +27,15 @@ import com.tle.beans.entity.LanguageBundle;
 import com.tle.beans.entity.LanguageString;
 import com.tle.common.beans.exception.InvalidDataException;
 import com.tle.common.beans.exception.ValidationError;
+import com.tle.common.institution.CurrentInstitution;
 import com.tle.common.interfaces.I18NStrings;
 import com.tle.common.interfaces.equella.SimpleI18NStrings;
 import com.tle.common.security.PrivilegeTree.Node;
 import com.tle.common.security.TargetList;
 import com.tle.common.security.TargetListEntry;
 import com.tle.core.entity.service.AbstractEntityService;
+import com.tle.core.institution.Limited;
+import com.tle.core.institution.Limits;
 import com.tle.core.security.TLEAclManager;
 import com.tle.exceptions.AccessDeniedException;
 import com.tle.web.api.interfaces.beans.BaseEntityBean;
@@ -133,6 +136,7 @@ public abstract class AbstractBaseEntitySerializer<
   public BE deserializeNew(BEB bean, @Nullable String stagingUuid, boolean importing)
       throws AccessDeniedException, InvalidDataException {
     validateBean(bean, true);
+    Limits.creation().checkLimit(Limited.BaseEntity(), CurrentInstitution.get());
     final BE entity = createEntity();
     return doEdit(entity, bean, stagingUuid, null, false, false, importing);
   }

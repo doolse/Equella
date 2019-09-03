@@ -35,6 +35,8 @@ import com.tle.core.events.listeners.GroupChangedListener;
 import com.tle.core.events.listeners.UserChangeListener;
 import com.tle.core.events.services.EventService;
 import com.tle.core.guice.Bind;
+import com.tle.core.institution.Limited;
+import com.tle.core.institution.Limits;
 import com.tle.core.security.impl.RequiresPrivilege;
 import com.tle.core.services.ValidationHelper;
 import com.tle.core.usermanagement.standard.dao.TLEGroupDao;
@@ -74,6 +76,8 @@ public class TLEGroupServiceImpl
   @RequiresPrivilege(priv = "EDIT_USER_MANAGEMENT")
   @Transactional(propagation = Propagation.REQUIRED)
   public String add(String parentID, String name) {
+    Limits.creation().checkLimit(Limited.Groups(), CurrentInstitution.get());
+
     TLEGroup group = createGroup(null, name);
 
     if (parentID != null) {

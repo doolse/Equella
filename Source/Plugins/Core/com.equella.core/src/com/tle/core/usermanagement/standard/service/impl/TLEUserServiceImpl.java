@@ -44,6 +44,8 @@ import com.tle.core.events.listeners.GroupChangedListener;
 import com.tle.core.events.listeners.UserChangeListener;
 import com.tle.core.events.services.EventService;
 import com.tle.core.guice.Bind;
+import com.tle.core.institution.Limited;
+import com.tle.core.institution.Limits;
 import com.tle.core.security.impl.RequiresPrivilege;
 import com.tle.core.services.ValidationHelper;
 import com.tle.core.services.user.UserService;
@@ -94,6 +96,7 @@ public class TLEUserServiceImpl
 
     newUser.setInstitution(CurrentInstitution.get());
     newUser.setId(0l);
+    Limits.creation().checkLimit(Limited.Users(), CurrentInstitution.get());
 
     if (Check.isEmpty(newUser.getUuid())) {
       newUser.setUuid(UUID.randomUUID().toString());

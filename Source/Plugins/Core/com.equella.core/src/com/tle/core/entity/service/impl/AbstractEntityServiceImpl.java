@@ -78,6 +78,8 @@ import com.tle.core.filesystem.EntityFile;
 import com.tle.core.filesystem.staging.service.StagingService;
 import com.tle.core.hibernate.equella.service.InitialiserService;
 import com.tle.core.institution.InstitutionService;
+import com.tle.core.institution.Limited;
+import com.tle.core.institution.Limits;
 import com.tle.core.institution.convert.ConverterParams;
 import com.tle.core.institution.convert.XmlHelper;
 import com.tle.core.institution.convert.service.InstitutionImportService;
@@ -244,6 +246,7 @@ public abstract class AbstractEntityServiceImpl<
   @Transactional
   public BaseEntityLabel doAdd(
       EntityPack<T> pack, @Nullable EntityEditingSession<B, T> session, boolean lockAfterwards) {
+    Limits.creation().checkLimit(Limited.BaseEntity(), CurrentInstitution.get());
     BaseEntityLabel label = addInternal(session, pack, lockAfterwards);
     afterAdd(pack);
     return label;
