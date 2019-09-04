@@ -16,33 +16,24 @@
  * limitations under the License.
  */
 
-package com.tle.admin.controls.repository;
+package com.tle.core.remoting;
 
-import com.dytech.edge.admin.wizard.editor.Editor;
-import com.dytech.edge.admin.wizard.model.Control;
-import com.tle.admin.controls.EditorFactory;
-import com.tle.admin.schema.SchemaModel;
-import java.util.Set;
+import java.util.Collection;
+import java.util.stream.Collectors;
+import org.java.plugin.registry.Extension;
+import org.java.plugin.registry.Extension.Parameter;
 
-/** @author Nicholas Read */
-public interface ControlDefinition {
-  EditorFactory editorFactory();
+public interface RemoteScriptingService {
 
-  Set<String> getContexts();
+  boolean isSafeScripting();
 
-  String getName();
-
-  String getId();
-
-  boolean hasContext(String context);
-
-  Editor createEditor(Control control, int type, SchemaModel schema);
-
-  String getIcon();
-
-  Control createControlModel();
-
-  Object createWrappedObject();
-
-  boolean usesAdvancedScripting();
+  static Collection<Extension> filterUnsafe(Collection<Extension> extensions) {
+    return extensions.stream()
+        .filter(
+            ext -> {
+              Parameter p = ext.getParameter("advancedScripting");
+              return p == null || !p.valueAsBoolean();
+            })
+        .collect(Collectors.toList());
+  }
 }
