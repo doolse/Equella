@@ -85,4 +85,10 @@ public interface MimeTypeService {
   interface MimeEntryChanges {
     void editMimeEntry(MimeEntry entry);
   }
+
+  interface DefaultMimeLookup {
+    MimeEntry byExtension(String extension);
+
+    MimeEntry byMimeType(String mimeType);
+  }
 }

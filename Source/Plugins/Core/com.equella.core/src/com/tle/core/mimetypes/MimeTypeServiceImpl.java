@@ -70,6 +70,8 @@ public class MimeTypeServiceImpl implements MimeTypeService, MimeTypesUpdatedLis
       AbstractPluginService.getMyPluginId(MimeTypeServiceImpl.class) + ".";
   @Inject private MimeEntryDao mimeEntryDao;
   @Inject private EventService eventService;
+  /* Function to as fallback for extension to mimetype */
+  public static DefaultMimeLookup defaultMimeLookup;
 
   private PluginTracker<TextExtracterExtension> textExtracterTracker;
 
@@ -155,21 +157,27 @@ public class MimeTypeServiceImpl implements MimeTypeService, MimeTypesUpdatedLis
   @Override
   public MimeEntry getEntryForFilename(String filename) {
     EntryCache cache = mimeCache.getCache();
-    return cache.getExtensionEntries().get(getExtension(filename));
+    String extension = getExtension(filename);
+    MimeEntry entry = cache.getExtensionEntries().get(extension);
+    if (entry == null && defaultMimeLookup != null) {
+      return defaultMimeLookup.byExtension(extension);
+    }
+    return entry;
   }
 
   @Override
   public String getMimeTypeForFilename(String filename) {
     MimeEntry entry = getEntryForFilename(filename);
-    if (entry != null) {
-      return entry.getType();
-    }
-    return DEFAULT_MIMETYPE;
+    return entry != null ? entry.getType() : DEFAULT_MIMETYPE;
   }
 
   @Override
   public MimeEntry getEntryForMimeType(String mimeType) {
-    return mimeCache.getCache().getMimeEntries().get(mimeType);
+    MimeEntry entry = mimeCache.getCache().getMimeEntries().get(mimeType);
+    if (entry == null && defaultMimeLookup != null && mimeType != null) {
+      return defaultMimeLookup.byMimeType(mimeType);
+    }
+    return entry;
   }
 
   @Override

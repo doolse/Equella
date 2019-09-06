@@ -27,6 +27,8 @@ import com.tle.core.application.StartupBean;
 import com.tle.core.guice.Bind;
 import com.tle.core.hibernate.DataSourceService;
 import com.tle.core.migration.impl.HibernateMigrationService;
+import com.tle.core.mime.TomcatDefaultMimeLookup;
+import com.tle.core.mimetypes.MimeTypeServiceImpl;
 import com.tle.core.zookeeper.ZookeeperService;
 import com.tle.tomcat.events.TomcatRestartListener;
 import com.tle.tomcat.service.TomcatService;
@@ -238,6 +240,7 @@ public class TomcatServiceImpl implements TomcatService, StartupBean, TomcatRest
           });
 
       tomcat.getServer().setParentClassLoader(getClass().getClassLoader());
+      MimeTypeServiceImpl.defaultMimeLookup = new TomcatDefaultMimeLookup(context);
       tomcat.start();
     } catch (Throwable e) // NOSONAR
     {
