@@ -55,7 +55,7 @@ class CloudProviderApi {
     ApiHelper.runAndBuild {
       for {
         ctx               <- getContext
-        validatedInstance <- CloudProviderDB.register(regtoken, registration)
+        validatedInstance <- CloudProviderService.register(regtoken, registration)
       } yield {
         val forwardUrl = UriBuilder
           .fromUri(ctx.inst.getUrlAsUri)
@@ -85,7 +85,7 @@ class CloudProviderApi {
         RunWithDB.execute {
           SettingsDB.ensureEditSystem {
             for {
-              token <- CloudProviderDB.createRegistrationToken
+              token <- CloudProviderService.createRegistrationToken
             } yield {
               val returnUrl = ApiHelper
                 .apiUriBuilder()

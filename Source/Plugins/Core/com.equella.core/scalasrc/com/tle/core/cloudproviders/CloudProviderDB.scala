@@ -72,9 +72,6 @@ object CloudProviderDB {
   val RefreshServiceId = "refresh"
   val Logger           = LoggerFactory.getLogger(getClass)
 
-  val tokenCache =
-    LegacyGuice.replicatedCacheService.getCache[String]("cloudRegTokens", 100, 1, TimeUnit.HOURS)
-
   type CloudProviderVal[A] = ValidatedNec[EntityValidation, A]
 
   implicit val dbExt: EntityDBExt[CloudProviderDB] =
@@ -131,34 +128,6 @@ object CloudProviderDB {
       }
   }
 
-  def validToken(regToken: String): DB[CloudProviderVal[Unit]] = {
-    ZIO.effect {
-      if (!tokenCache.get(regToken).isPresent)
-        EntityValidation("token", "invalid").invalidNec
-      else {
-        tokenCache.invalidate(regToken)
-        ().validNec
-      }
-    }
-  }
-
-  def register(
-      regToken: String,
-      registration: CloudProviderRegistration): DB[CloudProviderVal[CloudProviderInstance]] =
-    validToken(regToken).flatMap {
-      case Valid(_) =>
-        for {
-          oeq    <- EntityDB.newEntity(UUID.randomUUID())
-          locale <- getContext.map(_.locale)
-          validated = validateRegistrationFields(oeq,
-                                                 registration,
-                                                 CloudOAuthCredentials.random(),
-                                                 locale)
-          _ <- validated.traverse(cdb => flushDB(EntityDB.create(cdb)))
-        } yield validated.map(toInstance)
-      case Invalid(e) => e.invalid[CloudProviderInstance].pure[DB]
-    }
-
   def editRegistered(id: UUID, registration: CloudProviderRegistration)
     : OptionT[DBR, CloudProviderVal[CloudProviderInstance]] =
     EntityDB.readOne(id).flatMap { oeq =>
@@ -200,14 +169,6 @@ object CloudProviderDB {
         }
         .some
     } yield validated
-
-  val createRegistrationToken: DB[String] = {
-    LiftIO[DB].liftIO(IO {
-      val newToken = UUID.randomUUID().toString
-      tokenCache.put(newToken, newToken)
-      newToken
-    })
-  }
 
   val readAll: Stream[DB, CloudProviderInstance] = {
     EntityDB.readAll[CloudProviderDB].map(toInstance)
