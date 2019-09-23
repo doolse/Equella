@@ -20,25 +20,33 @@ package com.tle.core.cloudproviders
 
 import java.nio.ByteBuffer
 import java.time.Instant
-import java.util
-import java.util.Collections
-import java.util.function.Consumer
+import java.util.concurrent.TimeUnit
+import java.util.{Collections, UUID}
 
-import cats.effect.IO
+import cats.data.Validated.{Invalid, Valid}
 import cats.syntax.applicative._
 import cats.syntax.either._
+import cats.syntax.validated._
 import com.softwaremill.sttp._
 import com.softwaremill.sttp.circe._
 import com.tle.beans.cloudproviders.{CloudControlDefinition, ProviderControlDefinition}
 import com.tle.beans.item.attachments.{CustomAttachment, UnmodifiableAttachments}
 import com.tle.core.cache.{Cacheable, DBCacheBuilder}
+import com.tle.core.cloudproviders.CloudProviderDB.{
+  CloudProviderVal,
+  toInstance,
+  validateRegistrationFields
+}
 import com.tle.core.db._
+import com.tle.core.db.dao.EntityDB
 import com.tle.core.httpclient._
 import com.tle.core.oauthclient.OAuthClientService
+import com.tle.core.validation.EntityValidation
+import com.tle.legacy.LegacyGuice
 import fs2.Stream
 import org.slf4j.LoggerFactory
-import zio.{Task, ZIO}
 import zio.interop.catz._
+import zio.{Task, ZIO}
 
 import scala.collection.JavaConverters._
 
@@ -50,6 +58,9 @@ case class JSONError(error: DeserializationError[io.circe.Error]) extends CloudP
 object CloudProviderService {
 
   val Logger = LoggerFactory.getLogger(getClass)
+
+  val tokenCache =
+    LegacyGuice.replicatedCacheService.getCache[String]("cloudRegTokens", 100, 1, TimeUnit.HOURS)
 
   val ControlCacheValidSeconds   = 60
   val InvalidControlRetrySeconds = 20
@@ -113,6 +124,7 @@ object CloudProviderService {
         if (result.isLeft) InvalidControlRetrySeconds else ControlCacheValidSeconds
       ControlListCacheValue(Instant.now().plusSeconds(timeoutSeconds), result)
     }
+
     override def query: CloudProviderInstance => DB[ControlListCacheValue] = provider => {
       provider.serviceUrls.get(ControlsServiceId) match {
         case None => ZIO.succeed(withTimeout(Right(Iterable.empty)))
@@ -178,5 +190,41 @@ object CloudProviderService {
       .indexFiles
       .map(_.asJava)
       .getOrElse(Collections.emptyList())
+  }
+
+  def validToken(regToken: String): Task[CloudProviderVal[Unit]] = {
+    ZIO.effect {
+      if (!tokenCache.get(regToken).isPresent)
+        EntityValidation("token", "invalid").invalidNec
+      else {
+        tokenCache.invalidate(regToken)
+        ().validNec
+      }
+    }
+  }
+
+  def register(
+      regToken: String,
+      registration: CloudProviderRegistration): DB[CloudProviderVal[CloudProviderInstance]] =
+    validToken(regToken).flatMap {
+      case Valid(_) =>
+        for {
+          oeq    <- EntityDB.newEntity[CloudProviderDB](UUID.randomUUID())
+          locale <- getContext.map(_.locale)
+          validated = validateRegistrationFields(oeq,
+                                                 registration,
+                                                 CloudOAuthCredentials.random(),
+                                                 locale)
+          _ <- validated.traverse(cdb => flushDB(EntityDB.create(cdb)))
+        } yield validated.map(toInstance)
+      case Invalid(e) => ZIO.succeed(e.invalid[CloudProviderInstance])
+    }
+
+  val createRegistrationToken: Task[String] = {
+    ZIO.effect {
+      val newToken = UUID.randomUUID().toString
+      tokenCache.put(newToken, newToken)
+      newToken
+    }
   }
 }
