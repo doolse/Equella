@@ -121,7 +121,7 @@ object SearchConfigDB {
     EntityDB.readOne[SearchConfigDB](id).map(toSearchConfig(uc.locale))
   }
 
-  def readPageConfig(page: String): OptionT[DBR, SearchPageConfig] =
+  def readPageConfig(page: String): OptionT[InstDBR, SearchPageConfig] =
     SettingsDB.jsonProperty(pageConfigName(page))
 
   def writePageConfig(page: String, config: SearchPageConfig): DB[Unit] =

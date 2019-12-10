@@ -48,7 +48,7 @@ object SettingsDB {
   def decodeSetting[A](f: Setting => A => A)(s: Setting)(implicit dec: Decoder[A]): A =
     parse(s.value).flatMap(dec.decodeJson).fold(throw _, f(s))
 
-  def jsonProperty[A: Decoder](name: String): OptionT[DBR, A] =
+  def jsonProperty[A: Decoder](name: String): OptionT[InstDBR, A] =
     singleProperty(name).map(decodeSetting[A](_ => identity))
 
   def jsonProperties[A: Decoder](prefix: String, f: String => A => A): Stream[DB, A] =

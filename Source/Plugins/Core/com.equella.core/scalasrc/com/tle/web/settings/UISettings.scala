@@ -42,7 +42,8 @@ object UISettings {
     SettingsDB.jsonProperty[UISettings](UIPropName).optional
 
   val uiSettingsCache =
-    DBCacheBuilder.buildCache(InstCacheable[Option[UISettings]]("uiSettings", _ => getUISettings))
+    DBCacheBuilder.buildCache(
+      InstCacheable[DBR, Option[UISettings]]("uiSettings", _ => getUISettings))
 
   def setUISettings(in: UISettings): DB[Task[Unit]] =
     SettingsDB.setJsonProperty(UIPropName, in) *>
