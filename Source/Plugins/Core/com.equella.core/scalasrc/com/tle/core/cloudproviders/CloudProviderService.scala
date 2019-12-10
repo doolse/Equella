@@ -112,10 +112,10 @@ object CloudProviderService {
       expiry: Instant,
       result: Either[CloudProviderError, Iterable[CloudControlDefinition]])
 
-  object ControlListCache extends Cacheable[CloudProviderInstance, ControlListCacheValue] {
+  object ControlListCache extends Cacheable[DBR, CloudProviderInstance, ControlListCacheValue] {
     override def cacheId: String = "cloudControlLists"
 
-    override def key(userContext: UserContext, v: CloudProviderInstance): String =
+    override def key(userContext: DBR, v: CloudProviderInstance): String =
       s"${userContext.inst.getUniqueId}_${v.id}"
 
     def withTimeout(result: Either[CloudProviderError, Iterable[CloudControlDefinition]])

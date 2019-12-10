@@ -95,7 +95,7 @@ object OAuthClientService {
                     response.refresh_token)
   }
 
-  object OAuthTokenCache extends Cacheable[TokenRequest, OAuthTokenState] {
+  object OAuthTokenCache extends Cacheable[DBR, TokenRequest, OAuthTokenState] {
 
     private val queries                          = DBSchema.queries
     private val cacheQueries: CachedValueQueries = queries.cachedValueQueries
@@ -142,7 +142,7 @@ object OAuthClientService {
 
     override def cacheId: String = "oauthCache"
 
-    override def key(userContext: UserContext, v: TokenRequest): String = {
+    override def key(userContext: DBR, v: TokenRequest): String = {
       s"${userContext.inst.getUniqueId}_${v.authTokenUrl}_${v.clientId}"
     }
 
