@@ -67,7 +67,7 @@ class CloudAttachmentSerializer extends AbstractAttachmentSerializer {
     }
 
   def toJavaMap(smap: Option[Map[String, Json]]): java.util.Map[String, Object] =
-    smap.map(_.mapValues(_.foldWith(javaFolder)).asJava).orNull
+    smap.map(_.view.mapValues(_.foldWith(javaFolder)).toMap.asJava).orNull
 
   def toScalaMap(jmap: java.util.Map[String, Object]): Option[Map[String, Json]] =
     Option(jmap).map(_.asScala.mapValues(fromJava).toMap)

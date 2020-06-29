@@ -27,8 +27,8 @@ import cats.effect.{IO, LiftIO}
 import cats.syntax.applicative._
 import cats.syntax.apply._
 import cats.syntax.validated._
-import com.softwaremill.sttp._
-import com.softwaremill.sttp.circe._
+import sttp.client._
+import sttp.client.circe._
 import com.tle.core.db._
 import com.tle.core.db.dao.{EntityDB, EntityDBExt}
 import com.tle.core.db.tables.OEQEntity
@@ -153,13 +153,13 @@ object CloudProviderDB {
                         provider,
                         Map.empty,
                         uri =>
-                          sttp
+                          basicRequest
                             .post(uri)
                             .body(CloudProviderRefreshRequest(id))
-                            .response(asJson[CloudProviderRegistration]))
+                            .response(asJsonAlways[CloudProviderRegistration]))
         .flatMap { response =>
           response.body match {
-            case Right(Right(registration)) => doEdit(oeqProvider, registration).map(Option(_))
+            case Right(registration) => doEdit(oeqProvider, registration).map(Option(_))
             case err =>
               ZIO.effect {
                 Logger.warn(s"Failed to refresh provider - $err")

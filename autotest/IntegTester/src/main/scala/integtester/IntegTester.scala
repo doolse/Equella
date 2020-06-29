@@ -3,13 +3,15 @@
   */
 package integtester
 
-import cats.effect.{ExitCode, IO, IOApp}
+import cats.effect.{Blocker, ExitCode, IO, IOApp}
 import integtester.testprovider.TestingCloudProvider
 import io.circe.syntax._
 import org.http4s._
 import org.http4s.dsl.Http4sDsl
 import org.http4s.headers._
-import org.http4s.server.blaze.BlazeBuilder
+import org.http4s.implicits.http4sKleisliResponseSyntaxOptionT
+import org.http4s.server.Router
+import org.http4s.server.blaze.{BlazeBuilder, BlazeServerBuilder}
 import org.http4s.server.staticcontent._
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
@@ -18,6 +20,8 @@ import org.slf4j.LoggerFactory
 import scala.concurrent.ExecutionContext
 
 object IntegTester extends IOApp with Http4sDsl[IO] {
+
+  val blocker = Blocker.liftExecutionContext(ExecutionContext.global)
 
   val Logger = LoggerFactory.getLogger("IntegTester")
 
@@ -94,13 +98,14 @@ object IntegTester extends IOApp with Http4sDsl[IO] {
     case request @ (GET | POST) -> Root / "echo" / "index.do" => echoServer(request)
   }
 
+  val routes = Router("/" -> resourceService[IO](ResourceService.Config("/www", blocker)),
+                      "/"          -> appService,
+                      "/provider/" -> new TestingCloudProvider().oauthService).orNotFound
+
   def stream(args: List[String]) =
-    BlazeBuilder[IO]
+    BlazeServerBuilder[IO]
       .bindHttp(8083, "0.0.0.0")
-      .mountService(resourceService[IO](ResourceService.Config("/www", ExecutionContext.global)),
-                    "/")
-      .mountService(appService, "/")
-      .mountService(new TestingCloudProvider().oauthService, "/provider/")
+      .withHttpApp(routes)
       .serve
 
   lazy val embeddedRunning: Boolean = {

@@ -3,8 +3,8 @@
   "private": true,
   "config": {
     "buildlang": "target/resources/lang",
-    "devlang": "../target/scala-2.12/classes/lang",
-    "devjs": "../target/scala-2.12/classes/web/reactjs",
+    "devlang": "../target/scala-2.13/classes/lang",
+    "devjs": "../target/scala-2.13/classes/web/reactjs",
     "psglob": "output/*/*.js",
     "dist": "target/resources/web/reactjs",
     "jest": {

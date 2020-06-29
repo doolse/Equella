@@ -18,8 +18,10 @@
 
 package com.tle.core.cloudproviders
 
-import com.softwaremill.sttp.{Uri, UriInterpolator}
+import sttp.model.{Uri, UriInterpolator}
+import zio.ZIO
 
+import scala.util.Try
 import scala.util.parsing.combinator.{JavaTokenParsers, RegexParsers}
 
 sealed trait UriTemplate
@@ -64,7 +66,7 @@ object UriTemplateService {
 
     ServiceUriParser
       .parse(template)
-      .map { uriParts =>
+      .flatMap { uriParts =>
         val collected = uriParts.foldRight(CollectTemplate()) {
           case (uriTemplate, CollectTemplate(raw, args, last)) =>
             uriTemplate match {
@@ -78,7 +80,8 @@ object UriTemplateService {
             }
         }
         val rawStrings = StringContext(maybeBlank(collected.raw, collected.previous): _*)
-        UriInterpolator.interpolate(rawStrings, collected.args: _*)
+        Try(UriInterpolator.interpolate(rawStrings, collected.args: _*)).toEither.left.map(e =>
+          UriParseError(e.getMessage))
       }
   }
 }

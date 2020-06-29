@@ -35,7 +35,7 @@ object RunWithDB {
 
   val logger = LoggerFactory.getLogger(getClass)
 
-  case class DBContext(connection: TaskManaged[Connection],
+  case class DBContext(connection: Reservation[Any, Throwable, Connection],
                        inst: Institution,
                        user: UserState,
                        locale: Locale,
@@ -55,7 +55,12 @@ object RunWithDB {
     val con = sessionHolder.getSession().connection()
     val uc  = UserContext.fromThreadLocals()
     dbRuntime.unsafeRun(
-      jdbc.provide(DBContext(Managed.succeed(con), uc.inst, uc.user, uc.locale, uc.datasource)))
+      jdbc.provide(
+        DBContext(Reservation(ZIO.succeed(con), _ => ZIO.unit),
+                  uc.inst,
+                  uc.user,
+                  uc.locale,
+                  uc.datasource)))
   }
 
   def executeTransaction[A](ds: DataSource, jdbc: JDBCIO[A]): A = {
@@ -71,7 +76,7 @@ object RunWithDB {
         jdbc
           .tapBoth(_ => ZIO.effect(con.rollback()).ignore, _ => ZIO.effect(con.commit()).ignore)
           .provide(new JDBCConnection {
-            override val connection = Managed.succeed(con)
+            override val connection = Reservation(ZIO.succeed(con), _ => ZIO.unit)
           })
       }
     )

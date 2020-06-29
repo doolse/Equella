@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.TreeNode;
 
 /** @author Nicholas Read */
 public class GroupTreeNode extends DefaultMutableTreeNode implements FieldEquality<GroupTreeNode> {
@@ -73,24 +74,23 @@ public class GroupTreeNode extends DefaultMutableTreeNode implements FieldEquali
 
   public void sortChildren() {
     if (children != null) {
-      @SuppressWarnings("unchecked")
-      List<GroupTreeNode> childNodes = children;
+      List<TreeNode> childNodes = children;
 
       Collections.sort(childNodes, SORTER);
 
-      for (GroupTreeNode child : childNodes) {
-        child.sortChildren();
+      for (TreeNode child : childNodes) {
+        ((GroupTreeNode) child).sortChildren();
       }
     }
   }
 
-  private static final NumberStringComparator<GroupTreeNode> SORTER =
-      new NumberStringComparator<GroupTreeNode>() {
+  private static final NumberStringComparator<TreeNode> SORTER =
+      new NumberStringComparator<TreeNode>() {
         private static final long serialVersionUID = 1L;
 
         @Override
-        public String convertToString(GroupTreeNode t) {
-          return t.getName();
+        public String convertToString(TreeNode t) {
+          return ((GroupTreeNode) t).getName();
         }
       };
 }

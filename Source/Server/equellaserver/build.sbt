@@ -21,11 +21,12 @@ val TomcatVersion    = "8.5.51"
 val SwaggerVersion   = "1.5.24"
 val RestEasyVersion  = "3.5.0.Final"
 val simpledbaVersion = "0.1.11-SNAPSHOT"
-val circeVersion     = "0.11.1"
+val circeVersion     = "0.13.0"
 val jsoupVersion     = "1.11.3"
-val sttpVersion      = "1.6.4"
-val fs2Version       = "1.0.5"
+val sttpVersion      = "2.2.1"
+val fs2Version       = "2.4.0"
 val jsassVersion     = "5.3.0"
+resolvers += Resolver.sonatypeRepo("snapshots")
 
 libraryDependencies ++= Seq(
   "io.circe" %% "circe-core",
@@ -36,9 +37,9 @@ libraryDependencies ++= Seq(
 
 libraryDependencies ++= Seq(
   "co.fs2"                         %% "fs2-io"                        % fs2Version,
-  "com.softwaremill.sttp"          %% "core"                          % sttpVersion,
-  "com.softwaremill.sttp"          %% "async-http-client-backend-fs2" % sttpVersion,
-  "com.softwaremill.sttp"          %% "circe"                         % sttpVersion,
+  "com.softwaremill.sttp.client"   %% "core"                          % sttpVersion,
+  "com.softwaremill.sttp.client"   %% "async-http-client-backend-fs2" % sttpVersion,
+  "com.softwaremill.sttp.client"   %% "circe"                         % sttpVersion,
   "io.github.doolse"               %% "simpledba-jdbc"                % simpledbaVersion,
   "io.github.doolse"               %% "simpledba-circe"               % simpledbaVersion,
   "io.github.doolse"               %% "simpledba-fs2"                 % simpledbaVersion,
@@ -78,7 +79,7 @@ libraryDependencies ++= Seq(
   "io.swagger"                % "swagger-core"          % SwaggerVersion,
   "io.swagger"                % "swagger-annotations"   % SwaggerVersion,
   "io.swagger"                % "swagger-jaxrs"         % SwaggerVersion,
-  "io.swagger"                %% "swagger-scala-module" % "1.0.5",
+  "io.swagger"                %% "swagger-scala-module" % "1.0.6",
   "com.zaxxer"                % "HikariCP"              % "2.7.9",
   "commons-beanutils"         % "commons-beanutils"     % "1.9.4",
   "commons-codec"             % "commons-codec"         % "1.13",
@@ -233,10 +234,10 @@ libraryDependencies ++= Seq(
     ExclusionRule(organization = "net.sf.saxon")
   ),
   "xml-resolver"           % "xml-resolver"              % "1.2",
-  "org.scala-sbt"          %% "io"                       % "1.1.0",
+  "org.scala-sbt"          %% "io"                       % "1.3.0",
   "org.mozilla"            % "rhino"                     % "1.7R4",
-  "io.lemonlabs"           %% "scala-uri"                % "1.4.9",
-  "org.scala-lang.modules" %% "scala-parser-combinators" % "1.1.1",
+  "io.lemonlabs"           %% "scala-uri"                % "2.2.3",
+  "org.scala-lang.modules" %% "scala-parser-combinators" % "1.1.2",
   "io.bit3"                % "jsass"                     % "5.3.0",
   "io.github.classgraph"   % "classgraph"                % "4.8.52"
 )
@@ -277,7 +278,12 @@ excludeDependencies ++= Seq(
   "org.bouncycastle"             % "bcprov-jdk15",
   "org.apache.geronimo.specs"    % "geronimo-javamail_1.4_spec",
   "org.apache.geronimo.specs"    % "geronimo-stax-api_1.0_spec",
-  "org.jboss.spec.javax.servlet" % "jboss-servlet-api_3.1_spec"
+  "org.jboss.spec.javax.servlet" % "jboss-servlet-api_3.1_spec",
+  "maven-plugins"                % "maven-findbugs-plugin",
+  "maven-plugins"                % "maven-cobertura-plugin",
+  "com.sun.jersey"               % "jersey-client",
+  "com.sun.jersey"               % "jersey-core",
+  "com.sun.jersey"               % "jersey-json",
 )
 
 run := {

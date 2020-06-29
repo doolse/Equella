@@ -5,6 +5,9 @@ libraryDependencies ++= Seq(
   "org.springframework"      % "spring-web"      % "2.5.5",
   "org.springframework"      % "spring-aop"      % "2.5.5"
 )
+excludeDependencies ++= Seq(
+  "xmlpull" % "xmlpull"
+)
 
 dependsOn(platformSwing, LocalProject("com_tle_common_applet"))
 

@@ -7,12 +7,11 @@ name := "IntegTester"
 
 version := "1.0"
 
-val CirceVersion  = "0.9.3"
-val Http4sVersion = "0.20.0-M6"
+val CirceVersion  = "0.13.0"
+val Http4sVersion = "0.21.0"
 val jsoupVersion  = "1.11.3"
 
-scalaVersion := "2.12.6"
-scalacOptions += "-Ypartial-unification"
+scalaVersion := "2.13.2"
 
 excludeDependencies ++= Seq("org.typelevel" % "scala-library")
 

@@ -6,6 +6,10 @@ libraryDependencies ++= Seq(
   "org.springframework" % "spring-aop"   % "2.5.5"
 )
 
+excludeDependencies ++= Seq(
+  "xmlpull" % "xmlpull"
+)
+
 packageOptions in assembly += Package.ManifestAttributes(
   "Application-Name"                       -> "EQUELLA In-place File Editor",
   "Permissions"                            -> "all-permissions",

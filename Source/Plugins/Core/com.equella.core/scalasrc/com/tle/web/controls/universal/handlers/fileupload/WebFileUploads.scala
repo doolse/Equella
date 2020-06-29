@@ -132,7 +132,7 @@ object WebFileUploads {
                       uploadPath: String): Either[IllegalFileReason, Seq[PackageType]] = {
     val settings = ctx.controlSettings
     val detected =
-      ctx.repo.determinePackageTypes(info, uploadPath).asScala.map(PackageType.fromString)
+      ctx.repo.determinePackageTypes(info, uploadPath).asScala.map(PackageType.fromString).toSeq
     val allowed = allowedPackageTypes(settings)
     if (settings.isPackagesOnly && detected.isEmpty)
       Left(NotAPackage)

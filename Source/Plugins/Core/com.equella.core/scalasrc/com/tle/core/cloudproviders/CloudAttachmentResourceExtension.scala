@@ -23,10 +23,11 @@ import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.util
 import java.util.Collections
+import java.util.concurrent.{LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import cats.data.OptionT
-import cats.effect.IO
-import com.softwaremill.sttp._
+import cats.effect.{Blocker, IO}
+import sttp.client._
 import com.tle.beans.item.Item
 import com.tle.beans.item.attachments.{CustomAttachment, IAttachment}
 import com.tle.common.NameValue
@@ -116,7 +117,9 @@ case class CloudAttachmentViewableResource(info: SectionInfo,
 
   def uriParameters: Map[String, Any] = {
     val metaParams =
-      fields.cloudJson.meta.map(_.mapValues(_.foldWith(MetaJsonFolder))).getOrElse(Map.empty)
+      fields.cloudJson.meta
+        .map(_.view.mapValues(_.foldWith(MetaJsonFolder)).toMap)
+        .getOrElse(Map.empty)
     metaParams ++ Map("item"       -> itemId.getUuid,
                       "version"    -> itemId.getVersion,
                       "attachment" -> attach.getUuid,
@@ -186,15 +189,11 @@ case class CloudAttachmentViewableResource(info: SectionInfo,
             viewerDetails._2,
             provider,
             uriParameters,
-            uri => sttp.get(uri).response(asStream[Stream[Task, ByteBuffer]])))
+            uri => basicRequest.get(uri).response(asStreamAlways[Stream[Task, Byte]])))
       } yield response).value
     } match {
-      case None => EmptyResponseStream
-      case Some(response) =>
-        response.body match {
-          case Right(responseStream) => SttpResponseContentStream(response, responseStream)
-          case Left(failure)         => sys.error(failure)
-        }
+      case None           => EmptyResponseStream
+      case Some(response) => SttpResponseContentStream(response, response.body)
     }
   }
 
@@ -217,15 +216,19 @@ object MetaJsonFolder extends Folder[Any] {
     value.toMap.mapValues(_.foldWith(this))
 }
 
-case class SttpResponseContentStream(response: Response[fs2.Stream[Task, ByteBuffer]],
-                                     responseStream: fs2.Stream[Task, ByteBuffer])
+case class SttpResponseContentStream(response: Response[fs2.Stream[Task, Byte]],
+                                     responseStream: fs2.Stream[Task, Byte])
     extends AbstractContentStream(null, response.contentType.orNull) {
   override def getContentLength: Long      = response.contentLength.getOrElse(-1L)
   override def getInputStream: InputStream = null
   override def mustWrite(): Boolean        = true
   override def write(out: OutputStream): Unit = {
-    val channel = Channels.newChannel(out)
-    dbRuntime.unsafeRun(responseStream.evalMap(bb => Task(channel.write(bb))).compile.drain)
+    dbRuntime.unsafeRun(
+      fs2.io
+        .writeOutputStream(Task(out), streamingBlocker, closeAfterUse = false)
+        .apply(responseStream)
+        .compile
+        .drain)
   }
 }
 

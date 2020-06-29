@@ -602,7 +602,11 @@ class FileUploadHandlerNew extends AbstractAttachmentHandler[FileUploadHandlerMo
         case fa: FileAttachment => eds.commitUnzipPaths.get._1
         case za: ZipAttachment  => WebFileUploads.removeZipPath(za.getUrl)
       }
-      fileSystemService.enumerateTree(stagingContext.stgFile, zipFolder, null).getFiles.asScala
+      fileSystemService
+        .enumerateTree(stagingContext.stgFile, zipFolder, null)
+        .getFiles
+        .asScala
+        .toSeq
     }
 
     object EmptyZipProgress extends ZipProgress {
