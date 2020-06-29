@@ -136,7 +136,7 @@ object PluginScanner {
 
       convertAll(manifestMap, Set.empty, List.empty, manifestMap.keys)._2.foreach { jpf =>
         val jpfBase      = jpf.baseFile
-        val classesDir   = jpfBase / "target/scala-2.12/classes"
+        val classesDir   = jpfBase / "target/scala-2.13/classes"
         val codeLibrary  = JPFLibrary("code", "code", classesDir.toURI.toString, Some("*"))
         val resourcesDir = Option(jpfBase / "resources").filter(_.isDirectory)
         val resLibrary =

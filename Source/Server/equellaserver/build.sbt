@@ -273,7 +273,10 @@ excludeDependencies ++= Seq(
   "org.apache.geronimo.specs"    % "geronimo-stax-api_1.0_spec",
   "org.jboss.spec.javax.servlet" % "jboss-servlet-api_3.1_spec",
   "maven-plugins"                % "maven-findbugs-plugin",
-  "maven-plugins"                % "maven-cobertura-plugin"
+  "maven-plugins"                % "maven-cobertura-plugin",
+  "com.sun.jersey"               % "jersey-client",
+  "com.sun.jersey"               % "jersey-core",
+  "com.sun.jersey"               % "jersey-json",
 )
 
 unmanagedJars in Compile ++= oracleDriverJar.value.toSeq.classpath

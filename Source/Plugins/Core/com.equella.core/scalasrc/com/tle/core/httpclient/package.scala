@@ -27,14 +27,14 @@ import sttp.client.asynchttpclient.fs2.AsyncHttpClientFs2Backend
 import com.tle.legacy.LegacyGuice
 import sttp.client.asynchttpclient.WebSocketHandler
 import zio._
-import zio.internal.Executor
+import zio.internal.{Executor, Platform}
 import zio.interop.catz._
 
 package object httpclient {
   val httpClientThreadpool =
     new ThreadPoolExecutor(5, 5, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue[Runnable])
   implicit val httpRuntime = new BootstrapRuntime {
-    override val platform = super.platform
+    override val platform = Platform.default
       .withExecutor(Executor.fromThreadPoolExecutor(_ => Int.MaxValue)(httpClientThreadpool))
 
   }

@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentHashMap
 import cats.data.{Kleisli, OptionT}
 import cats.effect.{ContextShift, IO}
 import cats.syntax.semigroupk._
+import integtester.IntegTester.blocker
 import io.circe.syntax._
 import org.http4s._
 import org.http4s.circe._
@@ -75,7 +76,7 @@ class TestingCloudProvider(implicit val cs: ContextShift[IO]) extends Http4sDsl[
   )
 
   def headerMap(request: Request[IO]): Map[String, Seq[String]] =
-    request.headers.groupBy(_.name.value).mapValues(_.map(_.value).toSeq)
+    request.headers.toList.groupBy(_.name.value).view.mapValues(_.map(_.value).toSeq).toMap
 
   val authUser: Kleisli[OptionT[IO, ?], Request[IO], TestUser] =
     Kleisli { request =>
@@ -89,7 +90,7 @@ class TestingCloudProvider(implicit val cs: ContextShift[IO]) extends Http4sDsl[
   val publicServices = HttpRoutes.of[IO] {
     case request @ POST -> Root / "access_token" =>
       request.decode[UrlForm] { formData =>
-        val formMap = formData.values.mapValues(_.toVector)
+        val formMap = formData.values.view.mapValues(_.toVector).toMap
         val authReq = new AuthorizationRequest(headerMap(request), formMap)
         IO.fromFuture { IO(TestTokenEndpoint.handleRequest(authReq, TestTokenEndpoint)) }.flatMap {
           case Left(err) => Forbidden(err.description)
@@ -104,7 +105,7 @@ class TestingCloudProvider(implicit val cs: ContextShift[IO]) extends Http4sDsl[
       }
     case request @ GET -> Root / "control.js" =>
       StaticFile
-        .fromResource[IO]("/www/control.js", ExecutionContext.global)
+        .fromResource[IO]("/www/control.js", blocker)
         .getOrElse(Response.notFound)
 
   }

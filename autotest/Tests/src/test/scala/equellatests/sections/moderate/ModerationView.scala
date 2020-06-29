@@ -29,6 +29,7 @@ class ModerationView(val ctx: PageContext) extends WaitingBrowserPage {
       .findElements(By.xpath("id('moderation-comments')/div[contains(@class, 'modcomment')]"))
       .asScala
       .map(ModerationComment(ctx))
+      .toSeq
   }
 
 }

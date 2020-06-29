@@ -7,7 +7,7 @@ import io.circe.Decoder
 import io.circe.parser.parse
 import org.openqa.selenium.remote.Command
 
-import reflect.runtime._
+import scala.reflect.runtime._
 
 object ReplayTestCase {
 
