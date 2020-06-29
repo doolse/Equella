@@ -18,27 +18,31 @@
 
 package com.tle.core
 
-import java.util.concurrent.Executors
+import java.util.concurrent.{Executors, LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
-import com.softwaremill.sttp.SttpBackendOptions
-import com.softwaremill.sttp.SttpBackendOptions.{Proxy, ProxyType}
-import com.softwaremill.sttp.asynchttpclient.fs2.AsyncHttpClientFs2Backend
+import cats.effect.Blocker
+import sttp.client.{NothingT, SttpBackend, SttpBackendOptions}
+import sttp.client.SttpBackendOptions.{Proxy, ProxyType}
+import sttp.client.asynchttpclient.fs2.AsyncHttpClientFs2Backend
 import com.tle.legacy.LegacyGuice
+import sttp.client.asynchttpclient.WebSocketHandler
 import zio._
-import zio.internal.PlatformLive
+import zio.internal.Executor
 import zio.interop.catz._
 
-import scala.concurrent.ExecutionContext
-
 package object httpclient {
-  implicit val httpRuntime = new DefaultRuntime {
-    override val platform = PlatformLive.fromExecutionContext(
-      ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(5)))
+  val httpClientThreadpool =
+    new ThreadPoolExecutor(5, 5, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue[Runnable])
+  implicit val httpRuntime = new BootstrapRuntime {
+    override val platform = super.platform
+      .withExecutor(Executor.fromThreadPoolExecutor(_ => Int.MaxValue)(httpClientThreadpool))
+
   }
 
   implicit lazy val sttpBackend = {
     val proxy     = LegacyGuice.configService.getProxyDetails
     val sttpProxy = Option(proxy.getHost).map(h => Proxy(h, proxy.getPort, ProxyType.Http))
-    AsyncHttpClientFs2Backend[Task](SttpBackendOptions.Default.copy(proxy = sttpProxy))
+    httpRuntime.unsafeRun(
+      AsyncHttpClientFs2Backend[Task](SttpBackendOptions.Default.copy(proxy = sttpProxy)))
   }
 }

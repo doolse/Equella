@@ -542,9 +542,9 @@ class LegacyContentApi {
         case ls: HtmlLinkState => new LinkRenderer(ls)
         case o                 => new TagRenderer("span", o)
       } :+ Option(bc.getForcedLastCrumb).getOrElse(d.getTitle)
-      new SpanRenderer(
-        ct,
-        new DelimitedRenderer(" " + CoreStrings.text("breadcrumb.separator") + " ", allCrumbs: _*))
+      new SpanRenderer(ct,
+                       new DelimitedRenderer(" " + CoreStrings.text("breadcrumb.separator") + " ",
+                                             allCrumbs.toSeq: _*))
     } else None
   }
 

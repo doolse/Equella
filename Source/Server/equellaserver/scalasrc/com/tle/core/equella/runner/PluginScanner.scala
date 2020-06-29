@@ -31,7 +31,7 @@ import sbt.io.syntax._
 import sbt.io.IO
 
 import scala.annotation.tailrec
-import scala.collection.JavaConversions._
+import scala.jdk.CollectionConverters._
 
 object PluginScanner {
 
@@ -57,7 +57,8 @@ object PluginScanner {
     val pluginId = root.getAttribute("id").getValue
     val (extDeps, deps) = root
       .getChildren("requires")
-      .flatMap(_.getChildren("import"))
+      .asScala
+      .flatMap(_.getChildren("import").asScala)
       .map { e =>
         (e.getAttributeValue("plugin-id"), e.getAttributeValue("exported", "false") == "true")
       }
@@ -65,7 +66,8 @@ object PluginScanner {
 
     val adminConsole = root
       .getChildren("attributes")
-      .flatMap(a => a.getChildren("attribute"))
+      .asScala
+      .flatMap(a => a.getChildren("attribute").asScala)
       .find {
         _.getAttributeValue("id") == "type"
       }
@@ -177,8 +179,8 @@ object PluginScanner {
     val pluginId = root.getAttribute("id").getValue
     Option(root.getChild("requires")).foreach { r =>
       val newchildren =
-        r.getChildren().filterNot(_.getAttribute("plugin-id").getValue.contains(":"))
-      if (newchildren.isEmpty) root.removeChild("requires") else r.setContent(newchildren)
+        r.getChildren().asScala.filterNot(_.getAttribute("plugin-id").getValue.contains(":"))
+      if (newchildren.isEmpty) root.removeChild("requires") else r.setContent(newchildren.asJava)
     }
     if (jars.nonEmpty) {
       val rt = Option(root.getChild("runtime")).getOrElse {

@@ -454,7 +454,7 @@ class FileEditDetails(parentId: String,
         convertFileList(prependParent(parentPath, fed.name),
                         prependParent(displayParent, fed.name, " / "),
                         level + 1,
-                        fed.entry.getFiles.asScala)
+                        fed.entry.getFiles.asScala.toSeq)
       if (childFiles.isEmpty) childFolders else fed +: (childFiles ++ childFolders)
     }
     (files, folders)

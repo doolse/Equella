@@ -7,12 +7,11 @@ name := "IntegTester"
 
 version := "1.0"
 
-val CirceVersion  = "0.9.3"
-val Http4sVersion = "0.20.0-M6"
+val CirceVersion  = "0.13.0"
+val Http4sVersion = "0.21.0"
 val jsoupVersion  = "1.11.3"
 
-scalaVersion := "2.12.6"
-scalacOptions += "-Ypartial-unification"
+scalaVersion := "2.13.2"
 
 excludeDependencies ++= Seq("org.typelevel" % "scala-library")
 
@@ -28,7 +27,7 @@ libraryDependencies ++= Seq(
   "org.http4s"    %% "http4s-circe"        % Http4sVersion,
   "org.slf4j"     % "slf4j-simple"         % "1.7.26",
   "org.jsoup"     % "jsoup"                % jsoupVersion,
-  "com.nulab-inc" %% "scala-oauth2-core"   % "1.3.0"
+  "com.nulab-inc" %% "scala-oauth2-core"   % "1.5.0"
 )
 
 resourceGenerators in Compile += Def.task {

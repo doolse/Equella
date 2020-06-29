@@ -30,7 +30,7 @@ import io.circe.{Decoder, Encoder}
 
 import scala.collection.JavaConverters._
 import cats.syntax.functor._
-import zio.{Task, TaskR}
+import zio.{Task, RIO}
 
 import scala.io.Source
 
@@ -40,7 +40,7 @@ object ExportUtils {
       encoder: Encoder[A],
       path: A => String,
       baseDir: TemporaryFileHandle
-  ): Pipe[TaskR[R, ?], A, Unit] = _.evalMap { a =>
+  ): Pipe[RIO[R, ?], A, Unit] = _.evalMap { a =>
     val filepath = path(a)
     Task.effect {
       fileSystemService.write(baseDir, filepath, new StringReader(encoder(a).spaces2), false)

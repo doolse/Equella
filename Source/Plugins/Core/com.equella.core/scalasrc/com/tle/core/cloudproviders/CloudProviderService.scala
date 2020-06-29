@@ -20,15 +20,16 @@ package com.tle.core.cloudproviders
 
 import java.nio.ByteBuffer
 import java.time.Instant
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.{LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 import java.util.{Collections, UUID}
 
 import cats.data.Validated.{Invalid, Valid}
+import cats.effect.Blocker
 import cats.syntax.applicative._
 import cats.syntax.either._
 import cats.syntax.validated._
-import com.softwaremill.sttp._
-import com.softwaremill.sttp.circe._
+import sttp.client._
+import sttp.client.circe._
 import com.tle.beans.cloudproviders.{CloudControlDefinition, ProviderControlDefinition}
 import com.tle.beans.item.attachments.{CustomAttachment, UnmodifiableAttachments}
 import com.tle.core.cache.{Cacheable, DBCacheBuilder}
@@ -45,6 +46,7 @@ import com.tle.core.validation.EntityValidation
 import com.tle.legacy.LegacyGuice
 import fs2.Stream
 import org.slf4j.LoggerFactory
+import sttp.model.Uri
 import zio.interop.catz._
 import zio.{Task, ZIO}
 
@@ -93,7 +95,7 @@ object CloudProviderService {
   def serviceRequest[T](serviceUri: ServiceUrl,
                         provider: CloudProviderInstance,
                         params: Map[String, Any],
-                        f: Uri => Request[T, Stream[Task, ByteBuffer]]): DB[Response[T]] =
+                        f: Uri => Request[T, Stream[Task, Byte]]): DB[Response[T]] =
     for {
       cparams <- contextParams
       uri <- ZIO.fromEither(
@@ -105,7 +107,7 @@ object CloudProviderService {
           OAuthClientService
             .authorizedRequest(oauthUrl.toString, auth.clientId, auth.clientSecret, req)
         }
-      } else req.send()
+      } else req.send[Task]()
     } yield response
 
   case class ControlListCacheValue(
@@ -134,12 +136,13 @@ object CloudProviderService {
               controlsService,
               provider,
               Map(),
-              u => sttp.get(u).response(asJson[Map[String, ProviderControlDefinition]]))
+              u =>
+                basicRequest.get(u).response(asJsonAlways[Map[String, ProviderControlDefinition]]))
           }.map { responseOrError =>
             withTimeout {
               for {
                 response   <- responseOrError.leftMap(IOError)
-                controlMap <- response.body.leftMap(HttpError).flatMap(_.leftMap(JSONError))
+                controlMap <- response.body.leftMap(re => JSONError(re))
               } yield {
                 controlMap.map {
                   case (controlId, config) =>

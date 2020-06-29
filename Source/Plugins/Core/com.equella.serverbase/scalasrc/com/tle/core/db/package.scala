@@ -49,10 +49,10 @@ package object db {
   lazy val defaultSessionFactory =
     HibernateServiceImpl.getInstance().getTransactionAwareSessionFactory("main", false)
 
-  val dbRuntime = new DefaultRuntime {}
+  val dbRuntime = new BootstrapRuntime {}
 
   trait JDBCConnection {
-    val connection: TaskManaged[Connection]
+    val connection: Reservation[Any, Throwable, Connection]
   }
 
   type OptionT[R, A] = ZIO[R, Option[Throwable], A]
@@ -71,8 +71,7 @@ package object db {
   object JDBCIOConnection extends WithJDBCConnection[JDBCStream] {
     override def apply[A](f: Connection => Stream[JDBCIO, A]): Stream[JDBCIO, A] =
       for {
-        managedConnection <- Stream.eval(
-          ZIO.access[JDBCConnection](_.connection).flatMap(_.reserve))
+        managedConnection <- Stream.eval(ZIO.access[JDBCConnection](_.connection))
         connection <- Stream.bracket(managedConnection.acquire)(c =>
           managedConnection.release(Exit.succeed(c)).unit)
         res <- f(connection)

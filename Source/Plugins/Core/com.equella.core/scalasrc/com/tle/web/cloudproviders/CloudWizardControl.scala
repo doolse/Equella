@@ -21,7 +21,7 @@ package com.tle.web.cloudproviders
 import java.util.UUID
 
 import com.dytech.edge.wizard.beans.control.CustomControl
-import com.softwaremill.sttp.Uri
+import sttp.model.Uri
 import com.tle.common.usermanagement.user.CurrentUser
 import com.tle.core.cloudproviders.{CloudProviderDB, CloudProviderInstance, CloudProviderService}
 import com.tle.core.db.{DB, RunWithDB}

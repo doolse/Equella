@@ -18,7 +18,9 @@
 
 package com.tle.core
 import java.util.UUID
+import java.util.concurrent.{LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
+import cats.effect.Blocker
 import com.tle.beans.Institution
 import com.tle.common.usermanagement.user.AbstractUserState
 import com.tle.common.usermanagement.user.valuebean.DefaultUserBean
@@ -29,6 +31,9 @@ import io.circe.{Decoder, Encoder}
 import io.circe.generic.semiauto._
 
 package object cloudproviders {
+
+  val streamingBlocker = Blocker.liftExecutorService(
+    new ThreadPoolExecutor(5, 5, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue[Runnable]))
 
   case class CloudOAuthCredentials(clientId: String, clientSecret: String)
 

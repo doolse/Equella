@@ -23,10 +23,15 @@ import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.util.UUID
 
-import com.softwaremill.sttp._
+import sttp.client._
 import com.tle.beans.item.{Item, ItemPack}
 import com.tle.common.filesystem.FileEntry
-import com.tle.core.cloudproviders.{CloudProviderDB, CloudProviderService}
+import com.tle.core.cloudproviders.{
+  streamingBlocker,
+  CloudAttachmentViewableResource,
+  CloudProviderDB,
+  CloudProviderService
+}
 import com.tle.core.db.{RunWithDB, dbRuntime}
 import com.tle.core.httpclient._
 import com.tle.core.item.operations.{ItemOperationParams, WorkflowOperation}
@@ -44,6 +49,7 @@ import javax.ws.rs._
 import javax.ws.rs.core.Response.{ResponseBuilder, Status}
 import javax.ws.rs.core.{Context, Response, StreamingOutput, UriInfo}
 import org.jboss.resteasy.annotations.cache.NoCache
+import sttp.model.{HeaderNames, Uri}
 import zio.interop.catz._
 import zio.{Task, ZIO}
 
@@ -137,23 +143,24 @@ class WizardApi {
     Response.ok().build()
   }
 
-  def streamedResponse(
-      response: com.softwaremill.sttp.Response[Stream[Task, ByteBuffer]]): ResponseBuilder = {
-    response.body match {
-      case Right(responseStream) =>
-        val stream = new StreamingOutput {
-          override def write(output: OutputStream): Unit = {
-            val channel = Channels.newChannel(output)
-            dbRuntime.unsafeRun(responseStream.evalMap(bb => Task(channel.write(bb))).compile.drain)
-          }
-        }
-        Response
-          .status(response.code)
-          .header(HeaderNames.ContentType, response.contentType.orNull)
-          .header(HeaderNames.ContentLength, response.contentLength.orNull)
-          .entity(stream)
-      case _ => Response.status(response.code)
+  def streamedResponse(response: sttp.client.Response[Stream[Task, Byte]]): ResponseBuilder = {
+    val responseStream = response.body
+    val stream = new StreamingOutput {
+      override def write(output: OutputStream): Unit = {
+        dbRuntime.unsafeRun(
+          fs2.io
+            .writeOutputStream(Task(output), streamingBlocker, closeAfterUse = false)
+            .apply(responseStream)
+            .compile
+            .drain)
+      }
     }
+    Response
+      .status(response.code.code)
+      .header(HeaderNames.ContentType, response.contentType.orNull)
+      .header(HeaderNames.ContentLength, response.contentLength.orNull)
+      .entity(stream)
+
   }
 
   private def proxyRequest[T](
@@ -161,7 +168,7 @@ class WizardApi {
       request: HttpServletRequest,
       providerId: UUID,
       serviceId: String,
-      uriInfo: UriInfo)(f: Uri => Request[T, Stream[Task, ByteBuffer]]): Response = {
+      uriInfo: UriInfo)(f: Uri => Request[T, Stream[Task, Byte]]): Response = {
     withWizardState(wizid, request, false) { _ =>
       ()
     }
@@ -175,7 +182,7 @@ class WizardApi {
             .serviceRequest(serviceUri,
                             cp,
                             queryParams,
-                            uri => f(uri).response(asStream[Stream[Task, ByteBuffer]]))
+                            uri => f(uri).response(asStreamAlways[Stream[Task, Byte]]))
             .mapError(Option.apply)
         } yield
           streamedResponse(response)).optional.map(_.getOrElse(Response.status(Status.NOT_FOUND)))
@@ -192,7 +199,7 @@ class WizardApi {
                @PathParam("serviceId") serviceId: String,
                @Context uriInfo: UriInfo,
                @Context req: HttpServletRequest): Response = {
-    proxyRequest(wizid, req, providerId, serviceId, uriInfo)(sttp.get)
+    proxyRequest(wizid, req, providerId, serviceId, uriInfo)(basicRequest.get)
   }
 
   @POST
@@ -204,9 +211,9 @@ class WizardApi {
                 @Context req: HttpServletRequest,
                 content: InputStream): Response = {
     val streamedBody =
-      readInputStream(Task(content), 4096, Implicits.global).chunks.map(_.toByteBuffer)
+      readInputStream(Task(content), 4096, streamingBlocker)
     proxyRequest(wizid, req, providerId, serviceId, uriInfo) { uri =>
-      sttp
+      basicRequest
         .post(uri)
         .streamBody(streamedBody)
     }
@@ -243,7 +250,7 @@ case class NotifyProvider(providerId: UUID) extends DuringSaveOperation with Ser
         serviceUri <- ZIO.succeed(cp.serviceUrls.get("itemNotification")).some
         notifyParams = Map("uuid" -> getItem.getUuid, "version" -> getItem.getVersion.toString)
         _ <- CloudProviderService
-          .serviceRequest(serviceUri, cp, notifyParams, sttp.post)
+          .serviceRequest(serviceUri, cp, notifyParams, basicRequest.get)
           .mapError(Some(_))
       } yield false).optional.map(_.getOrElse(false))
     }

@@ -26,8 +26,8 @@ import cats.effect.IO
 import cats.syntax.applicative._
 import cats.syntax.apply._
 import com.google.common.cache.CacheBuilder
-import com.softwaremill.sttp._
-import com.softwaremill.sttp.circe._
+import sttp.client._
+import sttp.client.circe._
 import com.tle.core.cache.{Cacheable, DBCacheBuilder}
 import com.tle.core.db._
 import com.tle.core.db.tables.CachedValue
@@ -37,6 +37,7 @@ import io.circe.generic.semiauto._
 import io.circe.{Decoder, Encoder}
 import io.doolse.simpledba.circe._
 import com.tle.core.httpclient._
+import sttp.model.StatusCode
 import zio.{Task, ZIO}
 import zio.interop.catz._
 
@@ -110,7 +111,7 @@ object OAuthClientService {
       }
 
     def requestTokenAndSave(token: TokenRequest): DB[OAuthTokenState] = {
-      val postRequest = sttp.auth
+      val postRequest = basicRequest.auth
         .basic(token.clientId, token.clientSecret)
         .body(
           OAuthWebConstants.PARAM_GRANT_TYPE -> OAuthWebConstants.GRANT_TYPE_CREDENTIALS
@@ -135,7 +136,7 @@ object OAuthClientService {
       for {
         tokenState <- postRequest
           .send()
-          .map(_.unsafeBody.fold(de => throw de.error, responseToState))
+          .map(_.body.fold(de => throw de, responseToState))
         _ <- newCacheValue(tokenState)
       } yield tokenState
     }
@@ -185,7 +186,7 @@ object OAuthClientService {
     } yield refreshedToken
   }
 
-  def requestWithToken[T](request: Request[T, Stream[Task, ByteBuffer]],
+  def requestWithToken[T](request: Request[T, Stream[Task, Byte]],
                           token: String,
                           tokenType: OAuthTokenType.Value): Task[Response[T]] = {
     val authHeader = tokenType match {
@@ -194,18 +195,18 @@ object OAuthClientService {
       case OAuthTokenType.Bearer =>
         OAuthWebConstants.HEADER_AUTHORIZATION -> s"${OAuthWebConstants.AUTHORIZATION_BEARER} $token"
     }
-    request.headers(authHeader).send[Task]()
+    request.header(authHeader._1, authHeader._2).send[Task]()
   }
 
   def authorizedRequest[T](authTokenUrl: String,
                            clientId: String,
                            clientSecret: String,
-                           request: Request[T, Stream[Task, ByteBuffer]]): DB[Response[T]] = {
+                           request: Request[T, Stream[Task, Byte]]): DB[Response[T]] = {
     val tokenRequest = TokenRequest(authTokenUrl, clientId, clientSecret)
     for {
       token    <- tokenForClient(tokenRequest)
       response <- requestWithToken(request, token.token, token.tokenType)
-      _        <- if (response.code == StatusCodes.Unauthorized) removeToken(tokenRequest) else ().pure[DB]
+      _        <- if (response.code == StatusCode.Unauthorized) removeToken(tokenRequest) else ().pure[DB]
     } yield response
   }
 }
